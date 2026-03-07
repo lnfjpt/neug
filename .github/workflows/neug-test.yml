@@ -326,6 +326,7 @@ jobs:
     - name: Run Extension C++ Test
       run: |
         cd ${GITHUB_WORKSPACE}/tools/python_bind/build/neug_py_bind
+        export FLEX_DATA_DIR=${GITHUB_WORKSPACE}/example_dataset/tinysnb
         ctest -R json_extension_test -V
         ctest -R test_extension -V
 
