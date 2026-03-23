@@ -13,6 +13,9 @@
  * limitations under the License.
  */
 
+#include <cstdio>
+#include <filesystem>
+
 #include <gtest/gtest.h>
 
 #include "neug/execution/common/types/value.h"
@@ -21,6 +24,7 @@
 #include "neug/utils/encoder.h"
 #include "neug/utils/pb_utils.h"
 #include "neug/utils/string_view_vector.h"
+#include "neug/utils/yaml_utils.h"
 
 namespace neug {
 namespace test {

@@ -13,7 +13,6 @@
  * limitations under the License.
  */
 #include <gtest/gtest.h>
-#include <filesystem>
 
 #include "neug/execution/common/types/value.h"
 #include "neug/utils/property/property.h"
@@ -477,7 +476,12 @@ TEST_F(ValueTest, PropertyConversion) {
 TEST_F(ValueTest, EdgeCases) {
   EXPECT_THROW({ Value::LIST(std::vector<Value>()); }, std::runtime_error);
 
-  EXPECT_DEATH({ ValueConverter<bool>::typed_from_string("invalid"); }, "");
+  // LOG(FATAL) calls abort(); EXPECT_DEATH is unreliable under sanitizers.
+#if !defined(__SANITIZE_ADDRESS__) && !defined(__SANITIZE_THREAD__) && \
+    !defined(UNDEFINED_SANITIZER)
+  EXPECT_DEATH({ ValueConverter<bool>::typed_from_string("invalid"); },
+               "Invalid boolean string");
+#endif
 }
 
 TEST_F(ValueTest, TypeConverter) {
