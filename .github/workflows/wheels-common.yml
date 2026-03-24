@@ -494,7 +494,7 @@ jobs:
   build_wheels_macos_aarch64:
     needs:
       - determine_python_versions
-    runs-on: macos-14
+    runs-on: macos-15
     if: ${{
           (
             inputs.mode == 'release' &&
