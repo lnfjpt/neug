@@ -36,7 +36,7 @@ jobs:
       - name: Load LDBC dataset
         run: |
           export PYTHONPATH=${{ github.workspace }}/tools/python_bind:${{ github.workspace }}/tools/python_bind/build/lib:$PYTHONPATH
-          export DATA_PATH=/data/benchmark/social_network-sf100-CsvComposite-StringDateFormatter
+          export DATA_PATH=/data/benchmark/social_network-sf10-CsvComposite-StringDateFormatter
           start=$(date +%s)
           python3 benchmark/interactive/load_ldbc.py
           end=$(date +%s)
