@@ -12,7 +12,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  run:
+  benchmark:
+    name: LDBC SNB Interactive Benchmark
     if: github.ref == 'refs/heads/main'
     runs-on: [self-hosted, ldbc-benchmark]
     timeout-minutes: 360
@@ -66,8 +67,16 @@ jobs:
           fi
           RESULT_DIR="/data/benchmark-result/$(date +%Y%m%d-%H%M%S)-${GITHUB_SHA:0:7}"
           mkdir -p "$RESULT_DIR"
-          /data/benchmark/flex_ldbc_snb/driver/neug/driver/benchmark.sh /data/benchmark/flex_ldbc_snb/driver/neug/driver/benchmark-sf10.properties 2>&1 | tee "$RESULT_DIR/benchmark.log"
+          /data/neng/actions-runner/flex_ldbc_snb/driver/neug/driver/benchmark.sh /data/neng/actions-runner/flex_ldbc_snb/driver/neug/driver/benchmark-sf10.properties 2>&1 | tee "$RESULT_DIR/benchmark.log"
           BENCH_EXIT=$?
           echo "::notice::Benchmark results saved to $RESULT_DIR"
           kill $(cat serve.pid) 2>/dev/null && echo "NeuG server stopped" || true
           exit $BENCH_EXIT
+
+      - name: Cleanup NeuG server
+        if: always()
+        run: |
+          if [ -f serve.pid ]; then
+            kill $(cat serve.pid) 2>/dev/null && echo "NeuG server stopped" || true
+            rm -f serve.pid
+          fi
