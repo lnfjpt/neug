@@ -25,6 +25,8 @@ jobs:
         run: rm -rf ldbc/
 
       - name: Build NeuG Python package
+        env:
+          TMPDIR: /data/large_tmp
         working-directory: tools/python_bind
         run: |
           export BUILD_HTTP_SERVER=ON
