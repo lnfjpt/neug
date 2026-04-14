@@ -38,14 +38,20 @@ jobs:
         run: |
           export PYTHONPATH=${{ github.workspace }}/tools/python_bind:${{ github.workspace }}/tools/python_bind/build/lib:$PYTHONPATH
           export DATA_PATH=/data/benchmark/social_network-sf100-CsvComposite-StringDateFormatter
+          RESULT_DIR="/data/benchmark-result/$(date +%Y%m%d-%H%M%S)-${GITHUB_SHA:0:7}"
+          mkdir -p "$RESULT_DIR"
+          echo "$RESULT_DIR" > ${{ github.workspace }}/.benchmark_result_dir
           start=$(date +%s)
           python3 benchmark/interactive/load_ldbc.py
           end=$(date +%s)
-          echo "::notice::Load LDBC dataset took $((end - start)) seconds"
+          LOAD_DURATION=$((end - start))
+          echo "Load LDBC dataset took ${LOAD_DURATION} seconds" | tee "$RESULT_DIR/load.log"
+          echo "::notice::Load LDBC dataset took ${LOAD_DURATION} seconds"
 
       - name: Start NeuG server and run benchmark
         run: |
           export PYTHONPATH=${{ github.workspace }}/tools/python_bind:${{ github.workspace }}/tools/python_bind/build/lib:$PYTHONPATH
+          RESULT_DIR=$(cat ${{ github.workspace }}/.benchmark_result_dir)
           nohup python3 benchmark/interactive/serve_ldbc.py > serve.log 2>&1 &
           echo $! > serve.pid
           for i in $(seq 1 2700); do
@@ -65,8 +71,6 @@ jobs:
             cat serve.log
             exit 1
           fi
-          RESULT_DIR="/data/benchmark-result/$(date +%Y%m%d-%H%M%S)-${GITHUB_SHA:0:7}"
-          mkdir -p "$RESULT_DIR"
           /data/neng/actions-runner/flex_ldbc_snb/driver/neug/driver/benchmark.sh /data/neng/actions-runner/flex_ldbc_snb/driver/neug/driver/benchmark-sf100.properties 2>&1 | tee "$RESULT_DIR/benchmark.log"
           BENCH_EXIT=$?
           echo "::notice::Benchmark results saved to $RESULT_DIR"
