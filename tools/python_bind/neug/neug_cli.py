@@ -199,7 +199,10 @@ class NeugShell(cmd.Cmd):
         )
 
 
-@click.group(name="neug-cli", epilog="Run 'neug-cli COMMAND --help' for more information on a command.\n\n  e.g. neug-cli open --help")
+@click.group(
+    name="neug-cli",
+    epilog="Run 'neug-cli COMMAND --help' for more information on a command.\n\n  e.g. neug-cli open --help",
+)
 @click.version_option(version="0.1.1")
 def cli():
     """Neug CLI Tool."""
