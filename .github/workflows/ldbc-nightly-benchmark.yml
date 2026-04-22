@@ -12,11 +12,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  benchmark:
-    name: LDBC SNB Interactive Benchmark
+  start-server:
+    name: Build, Load and Start LDBC Server
     if: github.ref == 'refs/heads/main'
-    runs-on: [self-hosted, ldbc-benchmark]
-    timeout-minutes: 360
+    runs-on: [self-hosted, ldbc-benchmark-server]
+    timeout-minutes: 240
+    outputs:
+      result-dir: ${{ steps.load.outputs.result_dir }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -35,12 +37,13 @@ jobs:
           make build
 
       - name: Load LDBC dataset
+        id: load
         run: |
           export PYTHONPATH=${{ github.workspace }}/tools/python_bind:${{ github.workspace }}/tools/python_bind/build/lib:$PYTHONPATH
           export DATA_PATH=/data/benchmark/social_network-sf100-CsvComposite-StringDateFormatter
           RESULT_DIR="/data/benchmark-result/$(date +%Y%m%d-%H%M%S)-${GITHUB_SHA:0:7}"
           mkdir -p "$RESULT_DIR"
-          echo "$RESULT_DIR" > ${{ github.workspace }}/.benchmark_result_dir
+          echo "result_dir=$RESULT_DIR" >> "$GITHUB_OUTPUT"
           start=$(date +%s)
           python3 benchmark/interactive/load_ldbc.py
           end=$(date +%s)
@@ -48,41 +51,57 @@ jobs:
           echo "Load LDBC dataset took ${LOAD_DURATION} seconds" | tee "$RESULT_DIR/load.log"
           echo "::notice::Load LDBC dataset took ${LOAD_DURATION} seconds"
 
-      - name: Start NeuG server and run benchmark
+      - name: Start NeuG server
         run: |
           export PYTHONPATH=${{ github.workspace }}/tools/python_bind:${{ github.workspace }}/tools/python_bind/build/lib:$PYTHONPATH
-          RESULT_DIR=$(cat ${{ github.workspace }}/.benchmark_result_dir)
           export DEBUG=ON
-          nohup python3 benchmark/interactive/serve_ldbc.py > serve.log 2>&1 &
-          echo $! > serve.pid
+          nohup python3 benchmark/interactive/serve_ldbc.py > ${{ github.workspace }}/serve.log 2>&1 &
+          echo $! > ${{ github.workspace }}/serve.pid
           for i in $(seq 1 2700); do
-            if grep -q "Brpc server started on : 0.0.0.0:57380" serve.log 2>/dev/null; then
-              echo "::notice::NeuG server started (PID $(cat serve.pid))"
+            if grep -q "Brpc server started on : 0.0.0.0:57380" ${{ github.workspace }}/serve.log 2>/dev/null; then
+              echo "::notice::NeuG server started (PID $(cat ${{ github.workspace }}/serve.pid))"
               break
             fi
-            if ! kill -0 $(cat serve.pid) 2>/dev/null; then
+            if ! kill -0 $(cat ${{ github.workspace }}/serve.pid) 2>/dev/null; then
               echo "::error::NeuG server process exited unexpectedly"
-              cat serve.log
+              cat ${{ github.workspace }}/serve.log
               exit 1
             fi
             sleep 1
           done
-          if ! grep -q "Brpc server started on : 0.0.0.0:57380" serve.log 2>/dev/null; then
+          if ! grep -q "Brpc server started on : 0.0.0.0:57380" ${{ github.workspace }}/serve.log 2>/dev/null; then
             echo "::error::NeuG server did not start within 2700 seconds"
-            cat serve.log
+            cat ${{ github.workspace }}/serve.log
             exit 1
           fi
-          /data/neng/actions-runner/flex_ldbc_snb/driver/neug/driver/benchmark.sh /data/neng/actions-runner/flex_ldbc_snb/driver/neug/driver/benchmark-sf100.properties 2>&1 | tee "$RESULT_DIR/benchmark.log"
-          BENCH_EXIT=$?
-          cp serve.log "$RESULT_DIR/serve.log" 2>/dev/null || true
-          echo "::notice::Benchmark results saved to $RESULT_DIR"
-          kill $(cat serve.pid) 2>/dev/null && echo "NeuG server stopped" || true
-          exit $BENCH_EXIT
 
-      - name: Cleanup NeuG server
-        if: always()
+  run-benchmark:
+    name: Run LDBC Benchmark
+    needs: [start-server]
+    runs-on: [self-hosted, ldbc-benchmark-client]
+    timeout-minutes: 180
+    steps:
+      - name: Run benchmark
         run: |
-          if [ -f serve.pid ]; then
-            kill $(cat serve.pid) 2>/dev/null && echo "NeuG server stopped" || true
-            rm -f serve.pid
+          RESULT_DIR="${{ needs.start-server.outputs.result-dir }}"
+          mkdir -p "$RESULT_DIR"
+          /data/neng/actions-runner/flex_ldbc_snb/driver/neug/driver/benchmark.sh /data/neng/actions-runner/flex_ldbc_snb/driver/neug/driver/benchmark-sf100.properties 2>&1 | tee "$RESULT_DIR/benchmark.log"
+          echo "::notice::Benchmark results saved to $RESULT_DIR"
+
+  cleanup-server:
+    name: Cleanup NeuG Server
+    needs: [start-server, run-benchmark]
+    if: always()
+    runs-on: [self-hosted, ldbc-benchmark]
+    timeout-minutes: 10
+    steps:
+      - name: Stop NeuG server and save logs
+        run: |
+          RESULT_DIR="${{ needs.start-server.outputs.result-dir }}"
+          if [ -f ${{ github.workspace }}/serve.pid ]; then
+            kill $(cat ${{ github.workspace }}/serve.pid) 2>/dev/null && echo "NeuG server stopped" || true
+            rm -f ${{ github.workspace }}/serve.pid
+          fi
+          if [ -n "$RESULT_DIR" ] && [ -f ${{ github.workspace }}/serve.log ]; then
+            cp ${{ github.workspace }}/serve.log "$RESULT_DIR/serve.log" 2>/dev/null || true
           fi
