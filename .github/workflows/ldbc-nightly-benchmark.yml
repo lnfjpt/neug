@@ -12,13 +12,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  start-server:
-    name: Build, Load and Start LDBC Server
+  benchmark:
+    name: Build, Load, Serve and Benchmark
     if: github.ref == 'refs/heads/main'
     runs-on: [self-hosted, ldbc-benchmark-server]
-    timeout-minutes: 240
-    outputs:
-      result-dir: ${{ steps.load.outputs.result_dir }}
+    timeout-minutes: 480
     steps:
       - uses: actions/checkout@v4
         with:
@@ -55,8 +53,7 @@ jobs:
         run: |
           export PYTHONPATH=${{ github.workspace }}/tools/python_bind:${{ github.workspace }}/tools/python_bind/build/lib:$PYTHONPATH
           export DEBUG=ON
-          nohup setsid python3 benchmark/interactive/serve_ldbc.py > ${{ github.workspace }}/serve.log 2>&1 &
-          disown
+          nohup python3 benchmark/interactive/serve_ldbc.py > ${{ github.workspace }}/serve.log 2>&1 &
           echo $! > ${{ github.workspace }}/serve.pid
           for i in $(seq 1 2700); do
             if grep -q "Brpc server started on : 0.0.0.0:57380" ${{ github.workspace }}/serve.log 2>/dev/null; then
@@ -76,29 +73,16 @@ jobs:
             exit 1
           fi
 
-  run-benchmark:
-    name: Run LDBC Benchmark
-    needs: [start-server]
-    runs-on: [self-hosted, ldbc-benchmark-client]
-    timeout-minutes: 180
-    steps:
-      - name: Run benchmark
+      - name: Run benchmark via SSH
         run: |
-          RESULT_DIR="${{ needs.start-server.outputs.result-dir }}"
-          mkdir -p "$RESULT_DIR"
-          /data/neng/actions-runner/flex_ldbc_snb/driver/neug/driver/benchmark.sh /data/neng/actions-runner/flex_ldbc_snb/driver/neug/driver/benchmark-sf10.properties 2>&1 | tee "$RESULT_DIR/benchmark.log"
+          RESULT_DIR="${{ steps.load.outputs.result_dir }}"
+          ssh -o StrictHostKeyChecking=no client-host "mkdir -p $RESULT_DIR && /data/neng/actions-runner/flex_ldbc_snb/driver/neug/driver/benchmark.sh /data/neng/actions-runner/flex_ldbc_snb/driver/neug/driver/benchmark-sf10.properties 2>&1 | tee $RESULT_DIR/benchmark.log"
           echo "::notice::Benchmark results saved to $RESULT_DIR"
 
-  cleanup-server:
-    name: Cleanup NeuG Server
-    needs: [start-server, run-benchmark]
-    if: always()
-    runs-on: [self-hosted, ldbc-benchmark-server]
-    timeout-minutes: 10
-    steps:
       - name: Stop NeuG server and save logs
+        if: always()
         run: |
-          RESULT_DIR="${{ needs.start-server.outputs.result-dir }}"
+          RESULT_DIR="${{ steps.load.outputs.result_dir }}"
           if [ -f ${{ github.workspace }}/serve.pid ]; then
             kill $(cat ${{ github.workspace }}/serve.pid) 2>/dev/null && echo "NeuG server stopped" || true
             rm -f ${{ github.workspace }}/serve.pid
