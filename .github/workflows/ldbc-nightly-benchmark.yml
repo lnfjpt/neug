@@ -14,8 +14,8 @@ concurrency:
 jobs:
   benchmark:
     name: Build, Load, Serve and Benchmark
-    if: github.ref == 'refs/heads/main'
-    runs-on: [self-hosted, ldbc-benchmark-server]
+    if: github.repository == 'alibaba/neug' && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, ldbc-benchmark]
     timeout-minutes: 480
     steps:
       - uses: actions/checkout@v4
