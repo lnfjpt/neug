@@ -587,7 +587,6 @@
 ---- 0
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Match (n)-[]->(m:node_a) where m.datetime_property>$datetime_param return m.id; {"datetime_param": "2023-06-15" }
--UNSUPPORTED: datetime not supported
 ---- 10
 7
 4
@@ -615,11 +614,9 @@
 4
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Match (n)-[]->(m:node_a) where m.datetime_property=$datetime_param return m.id; {"datetime_param": "2023-01-15" }
--UNSUPPORTED: datetime not supported
 ---- 0
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Match (n)-[]->(m:node_a) where m.datetime_property<>$datetime_param return m.id; {"datetime_param": "2023-12-31" }
--UNSUPPORTED: datetime not supported
 ---- 10
 7
 4
@@ -642,7 +639,6 @@
 4
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Match (n)-[]->(m:node_a) where m.datetime_property<=$datetime_param return m.id; {"datetime_param": "2023-04-30" }
--UNSUPPORTED: datetime not supported
 ---- 0
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Match (n)-[]->(m:node_a) where m.i32_property>=$i32_param and m.i32_property<$i32_param1 return m.id; {"i32_param": 0, "i32_param1": 32768}
@@ -769,7 +765,6 @@
 ---- 0
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Match (n)-[:rel_a|rel_c]->(m:node_a) where m.datetime_property>$datetime_param return m.id; {"datetime_param": "2023-06-15" }
--UNSUPPORTED: datetime not supported
 ---- 4
 7
 4
@@ -785,11 +780,9 @@
 4
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Match (n)-[:rel_a|rel_c]->(m:node_a) where m.datetime_property=$datetime_param return m.id; {"datetime_param": "2023-01-15" }
--UNSUPPORTED: datetime not supported
 ---- 0
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Match (n)-[:rel_a|rel_c]->(m:node_a) where m.datetime_property<>$datetime_param return m.id; {"datetime_param": "2023-12-31" }
--UNSUPPORTED: datetime not supported
 ---- 4
 7
 4
@@ -803,7 +796,6 @@
 4
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Match (n)-[:rel_a|rel_c]->(m:node_a) where m.datetime_property<=$datetime_param return m.id; {"datetime_param": "2023-04-30" }
--UNSUPPORTED: datetime not supported
 ---- 0
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Match (n)-[:rel_a|rel_c]->(m:node_a) where m.i32_property>=$i32_param and m.i32_property<$i32_param1 return m.id; {"i32_param": 0, "i32_param1": 32768}
@@ -1214,11 +1206,9 @@
 8
 
 -STATEMENT Match (n:node_a:node_b) where n.datetime_property=$datetime_param Match (n)-[]->(m:node_a:node_b) where m.datetime_property=$datetime_param return m.id; {"datetime_param": "2023-01-15" }
--UNSUPPORTED: datetime not supported
 ---- 0
 
 -STATEMENT Match (n:node_a:node_b) where n.datetime_property<>$datetime_param Match (n)-[]->(m:node_a:node_b) where m.datetime_property<>$datetime_param return m.id; {"datetime_param": "2023-12-31" }
--UNSUPPORTED: datetime not supported
 ---- 60
 3
 7
@@ -1298,7 +1288,6 @@
 9
 
 -STATEMENT Match (n:node_a:node_b) where n.datetime_property<=$datetime_param Match (n)-[]->(m:node_a:node_b) where m.datetime_property<=$datetime_param return m.id; {"datetime_param": "2023-04-30" }
--UNSUPPORTED: datetime not supported
 ---- 0
 
 -STATEMENT Match (n:node_a:node_b) where n.i32_property>=$i32_param0 and n.i32_property<$i32_param1 Match (n)-[]->(m:node_a:node_b) where m.i32_property>=$i32_param0 and m.i32_property<$i32_param1 return m.id; {"i32_param0": 0, "i32_param1": 32768}
@@ -1531,7 +1520,6 @@
 ---- 0
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Match (n)-[]->(m:node_a:node_b) where m.datetime_property>$datetime_param return m.id; {"datetime_param": "2023-06-15" }
--UNSUPPORTED: datetime not supported
 ---- 12
 7
 4
@@ -1563,11 +1551,9 @@
 4
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Match (n)-[]->(m:node_a:node_b) where m.datetime_property=$datetime_param return m.id; {"datetime_param": "2023-01-15" }
--UNSUPPORTED: datetime not supported
 ---- 0
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Match (n)-[]->(m:node_a:node_b) where m.datetime_property<>$datetime_param return m.id; {"datetime_param": "2023-12-31" }
--UNSUPPORTED: datetime not supported
 ---- 12
 7
 4
@@ -1593,7 +1579,6 @@
 4
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Match (n)-[]->(m:node_a:node_b) where m.datetime_property<=$datetime_param return m.id; {"datetime_param": "2023-04-30" }
--UNSUPPORTED: datetime not supported
 ---- 0
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Match (n)-[]->(m:node_a:node_b) where m.i32_property>=$i32_param0 and m.i32_property<$i32_param1 return m.id; {"i32_param0": 0, "i32_param1": 540000000}
@@ -1730,7 +1715,6 @@
 ---- 0
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Match (n)-[:rel_b|rel_c]->(m:node_a:node_b) where m.datetime_property>$datetime_param return m.id; {"datetime_param": "2023-06-15" }
--UNSUPPORTED: datetime not supported
 ---- 4
 7
 4
@@ -1746,11 +1730,9 @@
 4
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Match (n)-[:rel_b|rel_c]->(m:node_a:node_b) where m.datetime_property=$datetime_param return m.id; {"datetime_param": "2023-01-15" }
--UNSUPPORTED: datetime not supported
 ---- 0
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Match (n)-[:rel_b|rel_c]->(m:node_a:node_b) where m.datetime_property<>$datetime_param return m.id; {"datetime_param": "2023-12-31" }
--UNSUPPORTED: datetime not supported
 ---- 4
 7
 4
@@ -1764,7 +1746,6 @@
 4
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Match (n)-[:rel_b|rel_c]->(m:node_a:node_b) where m.datetime_property<=$datetime_param return m.id; {"datetime_param": "2023-04-30" }
--UNSUPPORTED: datetime not supported
 ---- 0
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Match (n)-[:rel_b|rel_c]->(m:node_a:node_b) where m.i32_property>=$i32_param and m.i32_property<$i32_param1 return m.id; {"i32_param": 0, "i32_param1": 32768}
@@ -1867,7 +1848,6 @@
 
 
 -STATEMENT Match (n:node_a) where n.id=1 Optional Match (n)-[:rel_a]->(m:node_a) where m.datetime_property>$datetime_param return m.id; {"datetime_param": "2023-06-15" }
--UNSUPPORTED: datetime not supported
 ---- 2
 7
 4
@@ -1879,7 +1859,6 @@
 4
 
 -STATEMENT Match (n:node_a) where n.id=1 Optional Match (n)-[:rel_a]->(m:node_a) where m.datetime_property=$datetime_param return m.id; {"datetime_param": "2023-01-15" }
--UNSUPPORTED: datetime not supported
 ---- 1
 
 
@@ -1894,7 +1873,6 @@
 4
 
 -STATEMENT Match (n:node_a) where n.id=1 Optional Match (n)-[:rel_a]->(m:node_a) where m.datetime_property<=$datetime_param return m.id; {"datetime_param": "2023-04-30" }
--UNSUPPORTED: datetime not supported
 ---- 1
 
 
@@ -2063,7 +2041,6 @@
 
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Optional Match (n)-[]->(m:node_a) where m.datetime_property>$datetime_param return m.id; {"datetime_param": "2023-06-15" }
--UNSUPPORTED: datetime not supported
 ---- 10
 7
 4
@@ -2091,13 +2068,11 @@
 4
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Optional Match (n)-[]->(m:node_a) where m.datetime_property=$datetime_param return m.id; {"datetime_param": "2023-01-15" }
--UNSUPPORTED: datetime not supported
 ---- 2
 
 
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Optional Match (n)-[]->(m:node_a) where m.datetime_property<>$datetime_param return m.id; {"datetime_param": "2023-12-31" }
--UNSUPPORTED: datetime not supported
 ---- 10
 7
 4
@@ -2120,7 +2095,6 @@
 4
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Optional Match (n)-[]->(m:node_a) where m.datetime_property<=$datetime_param return m.id; {"datetime_param": "2023-04-30" }
--UNSUPPORTED: datetime not supported
 ---- 2
 
 
@@ -2259,7 +2233,6 @@
 
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Optional Match (n)-[:rel_a|rel_c]->(m:node_a) where m.datetime_property>$datetime_param return m.id; {"datetime_param": "2023-06-15" }
--UNSUPPORTED: datetime not supported
 ---- 4
 7
 4
@@ -2275,13 +2248,11 @@
 4
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Optional Match (n)-[:rel_a|rel_c]->(m:node_a) where m.datetime_property=$datetime_param return m.id; {"datetime_param": "2023-01-15" }
--UNSUPPORTED: datetime not supported
 ---- 2
 
 
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Optional Match (n)-[:rel_a|rel_c]->(m:node_a) where m.datetime_property<>$datetime_param return m.id; {"datetime_param": "2023-12-31" }
--UNSUPPORTED: datetime not supported
 ---- 4
 7
 4
@@ -2295,7 +2266,6 @@
 4
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Optional Match (n)-[:rel_a|rel_c]->(m:node_a) where m.datetime_property<=$datetime_param return m.id; {"datetime_param": "2023-04-30" }
--UNSUPPORTED: datetime not supported
 ---- 2
 
 
@@ -2494,7 +2464,6 @@
 
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Optional Match (n)-[]->(m:node_a:node_b) where m.datetime_property>$datetime_param return m.id; {"datetime_param": "2023-06-15" }
--UNSUPPORTED: datetime not supported
 ---- 12
 7
 4
@@ -2526,13 +2495,11 @@
 4
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Optional Match (n)-[]->(m:node_a:node_b) where m.datetime_property=$datetime_param return m.id; {"datetime_param": "2023-01-15" }
--UNSUPPORTED: datetime not supported
 ---- 2
 
 
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Optional Match (n)-[]->(m:node_a:node_b) where m.datetime_property<>$datetime_param return m.id; {"datetime_param": "2023-12-31" }
--UNSUPPORTED: datetime not supported
 ---- 12
 7
 4
@@ -2558,7 +2525,6 @@
 4
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Optional Match (n)-[]->(m:node_a:node_b) where m.datetime_property<=$datetime_param return m.id; {"datetime_param": "2023-04-30" }
--UNSUPPORTED: datetime not supported
 ---- 2
 
 
@@ -2705,7 +2671,6 @@
 
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Optional Match (n)-[:rel_b|rel_c]->(m:node_a:node_b) where m.datetime_property>$datetime_param return m.id; {"datetime_param": "2023-06-15" }
--UNSUPPORTED: datetime not supported
 ---- 4
 7
 4
@@ -2721,13 +2686,11 @@
 4
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Optional Match (n)-[:rel_b|rel_c]->(m:node_a:node_b) where m.datetime_property=$datetime_param return m.id; {"datetime_param": "2023-01-15" }
--UNSUPPORTED: datetime not supported
 ---- 2
 
 
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Optional Match (n)-[:rel_b|rel_c]->(m:node_a:node_b) where m.datetime_property<>$datetime_param return m.id; {"datetime_param": "2023-12-31" }
--UNSUPPORTED: datetime not supported
 ---- 4
 7
 4
@@ -2741,7 +2704,6 @@
 4
 
 -STATEMENT Match (n:node_a:node_b) where n.id=1 Optional Match (n)-[:rel_b|rel_c]->(m:node_a:node_b) where m.datetime_property<=$datetime_param return m.id; {"datetime_param": "2023-04-30" }
--UNSUPPORTED: datetime not supported
 ---- 2
 
 
@@ -2831,7 +2793,6 @@
 -0.693147
 
 -STATEMENT Match (n:node_a) where n.id=1 Match (n)-[e:rel_a]->(m:node_a) where e.datetime_weight=$datetime_param return e.double_weight; {"datetime_param": "2023-05-17": }
--UNSUPPORTED: datetime not supported
 ---- 0
 
 -STATEMENT Match (n:node_a) where n.id=1 Match (n)-[e:rel_a]->(m:node_a) where e.datetime_weight<>$datetime_param return e.double_weight; {"datetime_param": "2023-12-31": }
@@ -2847,7 +2808,6 @@
 -0.693147
 
 -STATEMENT Match (n:node_a) where n.id=1 Match (n)-[e:rel_a]->(m:node_a) where e.datetime_weight<=$datetime_param return e.double_weight; {"datetime_param": "2023-04-30": }
--UNSUPPORTED: datetime not supported
 ---- 0
 
 -STATEMENT Match (n:node_a) where n.id=1 Match (n)-[e]->(m) where e.i32_weight>$i32_param return e.double_weight; {"i32_param": 42}
@@ -2943,7 +2903,6 @@
 -0.693147
 
 -STATEMENT Match (n:node_a) where n.id=1 Match (n)-[e]->(m) where e.datetime_weight=$datetime_param return e.double_weight; {"datetime_param": "2023-05-17": }
--UNSUPPORTED: datetime not supported
 ---- 0
 
 -STATEMENT Match (n:node_a) where n.id=1 Match (n)-[e]->(m) where e.datetime_weight<>$datetime_param return e.double_weight; {"datetime_param": "2023-12-31": }
@@ -2995,7 +2954,6 @@
 4
 
 -STATEMENT Match (n:node_a) where n.id=1 Match (n)-[e:rel_datetime]->(m:node_a) where e.datetime_weight>$datetime_param return m.id; {"datetime_param": "2023-06-15": }
--UNSUPPORTED: datetime not supported
 ---- 2
 7
 4
