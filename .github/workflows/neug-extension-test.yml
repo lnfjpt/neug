@@ -2,8 +2,8 @@ name: NeuG Extension Test
 
 on:
   schedule:
-    # Run at 08:00 UTC every Saturday
-    - cron: '0 8 * * 6'
+    # Run at 04:00 CST (20:00 UTC Friday) every Saturday
+    - cron: '0 20 * * 5'
   pull_request:
     branches: [main]
     paths:
