@@ -576,8 +576,7 @@ class BDMLEdgeColumn : public IEdgeColumn {
     EdgeRecord ret;
     auto& e = edges_[idx];
     int label_idx = std::get<0>(e);
-    if (label_idx >= 0 &&
-        static_cast<size_t>(label_idx) < labels_.size()) {
+    if (label_idx >= 0 && static_cast<size_t>(label_idx) < labels_.size()) {
       ret.label = labels_[label_idx];
     }
     ret.dir = std::get<4>(e);
