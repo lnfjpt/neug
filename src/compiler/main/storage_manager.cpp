@@ -96,13 +96,17 @@ Table* StatsManager::getTable(common::table_id_t tableID) {
     auto defaultNode = std::make_unique<GNodeTable>(
         curEntry->ptrCast<catalog::NodeTableCatalogEntry>(), this,
         &memoryManager, 1);
-    return defaultNode.release();
+    auto* ptr = defaultNode.get();
+    tables[tableID] = std::move(defaultNode);
+    return ptr;
   }
   case common::TableType::REL:
   default: {
     auto defaultRel = std::make_unique<GRelTable>(
         1, curEntry->ptrCast<catalog::RelTableCatalogEntry>(), this);
-    return defaultRel.release();
+    auto* ptr = defaultRel.get();
+    tables[tableID] = std::move(defaultRel);
+    return ptr;
   }
   }
 }
