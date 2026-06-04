@@ -1,0 +1,197 @@
+name: Memory Leak Nightly
+
+on:
+  workflow_dispatch:
+    inputs:
+      outer_iters:
+        description: 'NEUG_LEAK_OUTER_ITERS for test_node_create'
+        required: false
+        default: '1000'
+      inner_rows:
+        description: 'NEUG_LEAK_INNER_ROWS for test_node_create'
+        required: false
+        default: '1000'
+      rss_iters:
+        description: '--iters for neug_rss_workload / test_memory_leak.py'
+        required: false
+        default: '2000'
+      run_valgrind:
+        description: 'Also run a small valgrind pass over test_node_create'
+        required: false
+        default: 'true'
+  schedule:
+    # UTC 19:00 = UTC+8 03:00 every day
+    - cron: '0 19 * * *'
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  memory-leak:
+    name: Build NeuG (RelWithDebInfo, no mimalloc) and run leak checks
+    if: github.repository == 'alibaba/neug' && (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main')
+    runs-on: [self-hosted, daily, linux, x64]
+    container:
+      image: neug-registry.cn-hongkong.cr.aliyuncs.com/neug/neug-dev:v0.1.2
+    timeout-minutes: 120
+    env:
+      OUTER_ITERS: ${{ github.event.inputs.outer_iters || '1000' }}
+      INNER_ROWS:  ${{ github.event.inputs.inner_rows  || '1000' }}
+      RSS_ITERS:   ${{ github.event.inputs.rss_iters   || '2000' }}
+      RUN_VALGRIND: ${{ github.event.inputs.run_valgrind || 'true' }}
+      LOG_DIR: ${{ github.workspace }}/memory-leak-logs
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Cache CCache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ${{ runner.os }}-ccache-memleak-${{ github.ref_name }}-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'proto/**') }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-memleak-${{ github.ref_name }}-
+            ${{ runner.os }}-ccache-memleak-
+            ${{ runner.os }}-ccache-
+
+      - name: Prepare log dir
+        run: mkdir -p "$LOG_DIR"
+
+      - name: Configure (RelWithDebInfo, BUILD_TEST=ON, WITH_MIMALLOC=OFF)
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DBUILD_TEST=ON \
+            -DWITH_MIMALLOC=OFF \
+            -DBUILD_HTTP_SERVER=OFF \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            2>&1 | tee "$LOG_DIR/cmake-configure.log"
+
+      - name: Build neug + test_node_create + neug_rss_workload
+        run: |
+          cmake --build build \
+            --target neug test_node_create neug_rss_workload \
+            -- -j"$(nproc)" \
+            2>&1 | tee "$LOG_DIR/cmake-build.log"
+
+      # ----------------------------------------------------------------
+      # 1) gtest single-case leak smoke (external observer expected)
+      # ----------------------------------------------------------------
+      - name: gtest -- test_node_create
+        env:
+          NEUG_RUN_MEMORY_LEAK_TESTS: '1'
+          NEUG_LEAK_OUTER_ITERS:      ${{ env.OUTER_ITERS }}
+          NEUG_LEAK_INNER_ROWS:       ${{ env.INNER_ROWS }}
+          NEUG_LEAK_CHECKPOINT_EVERY: '500'
+          GLOG_logtostderr:           '1'
+        run: |
+          set -o pipefail
+          ./build/tests/memory_leak/test_node_create \
+            --gtest_color=no \
+            2>&1 | tee "$LOG_DIR/test_node_create.log"
+
+      # ----------------------------------------------------------------
+      # 2) Multi-scenario RSS workload with internal slope+delta verdict
+      # ----------------------------------------------------------------
+      - name: bin/neug_rss_workload (4 scenarios, --exit-on-leak)
+        run: |
+          set -o pipefail
+          ./build/bin/neug_rss_workload \
+            --iters "$RSS_ITERS" --sample 100 \
+            --slope-threshold 0.5 --delta-threshold 5.0 \
+            --exit-on-leak \
+            2>&1 | tee "$LOG_DIR/rss_workload.log"
+
+      # ----------------------------------------------------------------
+      # 3) Python-side RSS workload (uses the same NeuG build via wheel)
+      # ----------------------------------------------------------------
+      - name: Build & install Python wheel (no mimalloc)
+        working-directory: tools/python_bind
+        env:
+          WITH_MIMALLOC: 'OFF'
+          BUILD_HTTP_SERVER: 'OFF'
+        run: |
+          set -o pipefail
+          make build 2>&1 | tee "$LOG_DIR/python-build.log"
+
+      - name: python3 tests/memory_leak/test_memory_leak.py
+        env:
+          PYTHONPATH: ${{ github.workspace }}/tools/python_bind:${{ github.workspace }}/tools/python_bind/build/lib
+        run: |
+          set -o pipefail
+          python3 tests/memory_leak/test_memory_leak.py \
+            --iters "$RSS_ITERS" --sample 100 \
+            --slope-threshold 0.5 --delta-threshold 5.0 \
+            --exit-on-leak \
+            2>&1 | tee "$LOG_DIR/test_memory_leak_py.log"
+
+      # ----------------------------------------------------------------
+      # 4) Optional valgrind pass — slow, so run with shrunken iter counts
+      # ----------------------------------------------------------------
+      - name: valgrind -- test_node_create (small workload)
+        if: ${{ env.RUN_VALGRIND == 'true' }}
+        env:
+          NEUG_RUN_MEMORY_LEAK_TESTS: '1'
+          NEUG_LEAK_OUTER_ITERS:      '20'
+          NEUG_LEAK_INNER_ROWS:       '100'
+          NEUG_LEAK_CHECKPOINT_EVERY: '5'
+          GLOG_logtostderr:           '1'
+        run: |
+          set -o pipefail
+          if ! command -v valgrind >/dev/null 2>&1; then
+            echo "::warning::valgrind not available in this image; skipping"
+            exit 0
+          fi
+          valgrind \
+            --tool=memcheck \
+            --leak-check=full \
+            --show-leak-kinds=definite,possible \
+            --errors-for-leak-kinds=definite \
+            --error-exitcode=42 \
+            --num-callers=30 \
+            --log-file="$LOG_DIR/valgrind.log" \
+            ./build/tests/memory_leak/test_node_create \
+              --gtest_color=no \
+            2>&1 | tee "$LOG_DIR/valgrind.stdout"
+
+      # ----------------------------------------------------------------
+      # 5) Always upload logs for postmortem
+      # ----------------------------------------------------------------
+      - name: Summarize verdicts
+        if: always()
+        run: |
+          echo '## Memory Leak Nightly Summary' >> "$GITHUB_STEP_SUMMARY"
+          echo '' >> "$GITHUB_STEP_SUMMARY"
+          if [ -f "$LOG_DIR/rss_workload.log" ]; then
+            echo '### bin/neug_rss_workload' >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            tail -n 20 "$LOG_DIR/rss_workload.log" >> "$GITHUB_STEP_SUMMARY" || true
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f "$LOG_DIR/test_memory_leak_py.log" ]; then
+            echo '### tests/memory_leak/test_memory_leak.py' >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            tail -n 20 "$LOG_DIR/test_memory_leak_py.log" >> "$GITHUB_STEP_SUMMARY" || true
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f "$LOG_DIR/valgrind.log" ]; then
+            echo '### valgrind (tail)' >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            tail -n 40 "$LOG_DIR/valgrind.log" >> "$GITHUB_STEP_SUMMARY" || true
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: memory-leak-nightly-${{ github.run_id }}
+          path: ${{ env.LOG_DIR }}
+          if-no-files-found: warn
+          retention-days: 14
