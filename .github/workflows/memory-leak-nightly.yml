@@ -28,9 +28,13 @@ jobs:
     name: Build NeuG (RelWithDebInfo, no mimalloc) and run leak checks
     # NOTE: temporarily removed `github.repository == 'alibaba/neug'` guard for debugging on forks.
     if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
-    runs-on: [self-hosted, daily, linux, x64]
-    container:
-      image: neug-registry.cn-hongkong.cr.aliyuncs.com/neug/neug-dev:v0.1.2
+    # NOTE: temporarily switched from self-hosted runner + private neug-dev image
+    # to github-hosted ubuntu-22.04 (no container) for fork debugging.
+    # Original config:
+    #   runs-on: [self-hosted, daily, linux, x64]
+    #   container:
+    #     image: neug-registry.cn-hongkong.cr.aliyuncs.com/neug/neug-dev:v0.1.2
+    runs-on: ubuntu-22.04
     timeout-minutes: 120
     env:
       OUTER_ITERS: ${{ github.event.inputs.outer_iters || '1000' }}
