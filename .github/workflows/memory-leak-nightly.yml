@@ -38,6 +38,13 @@ jobs:
     container:
       image: neug-registry.cn-hongkong.cr.aliyuncs.com/neug/neug-dev:v0.1.2
     timeout-minutes: 180
+    # In container mode GitHub Actions defaults `run:` shell to `sh -e {0}`
+    # (dash on debian-based images), which does NOT support `set -o pipefail`.
+    # Force bash so the same `set -o pipefail` snippets used elsewhere keep
+    # working and pipeline failures are not silently swallowed by `tee`.
+    defaults:
+      run:
+        shell: bash
     env:
       OUTER_ITERS: ${{ github.event.inputs.outer_iters || '1000' }}
       INNER_ROWS:  ${{ github.event.inputs.inner_rows  || '1000' }}
