@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   memory-leak:
-    name: Build NeuG (RelWithDebInfo, no mimalloc) and run leak checks
+    name: Build NeuG (RELEASE, no mimalloc) and run leak checks
     # NOTE: temporarily removed `github.repository == 'alibaba/neug'` guard for debugging on forks.
     if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
     # NOTE: temporarily switched from self-hosted runner + private neug-dev image
@@ -35,7 +35,7 @@ jobs:
     #   container:
     #     image: neug-registry.cn-hongkong.cr.aliyuncs.com/neug/neug-dev:v0.1.2
     runs-on: ubuntu-22.04
-    timeout-minutes: 120
+    timeout-minutes: 180
     env:
       OUTER_ITERS: ${{ github.event.inputs.outer_iters || '1000' }}
       INNER_ROWS:  ${{ github.event.inputs.inner_rows  || '1000' }}
@@ -53,45 +53,89 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/ccache
-          key: ${{ runner.os }}-ccache-memleak-${{ github.ref_name }}-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'proto/**') }}
+          key: ${{ runner.os }}-ccache-memleak-${{ github.ref_name }}-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'proto/**', '.github/workflows/memory-leak-nightly.yml') }}
           restore-keys: |
             ${{ runner.os }}-ccache-memleak-${{ github.ref_name }}-
             ${{ runner.os }}-ccache-memleak-
+            ${{ runner.os }}-ccache-${{ github.ref_name }}-
             ${{ runner.os }}-ccache-
 
-      - name: Install build dependencies (neug-dev image already includes most)
+      - name: Setup CCache (mirrors neug-test.yml)
         run: |
-          # neug-dev:v0.1.2 already provides build-essential / cmake / ninja /
-          # ccache / python3 / pip / google.protobuf, so this step is a no-op
-          # safety net. Kept here so the workflow still works on bare
-          # github-hosted runners if someone temporarily switches back.
-          if command -v apt-get >/dev/null 2>&1 && [ "$(id -u)" = "0" ]; then
-            apt-get update || true
-            apt-get install -y --no-install-recommends \
-              build-essential cmake ninja-build ccache \
-              python3 python3-pip python3-dev pkg-config || true
-          fi
+          set -o pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build ccache \
+            python3 python3-pip python3-dev pkg-config
+          mkdir -p ~/.cache/ccache
+          {
+            echo "CCACHE_DIR=$HOME/.cache/ccache"
+            echo "CCACHE_BASEDIR=${GITHUB_WORKSPACE}"
+            echo "CCACHE_COMPRESS=true"
+            echo "CCACHE_COMPRESSLEVEL=6"
+            echo "CCACHE_MAXSIZE=5G"
+          } >> "$GITHUB_ENV"
+          ccache --set-config=base_dir=${GITHUB_WORKSPACE}
+          ccache --set-config=compiler_check=content
+          ccache --set-config=compression=true
+          ccache --max-size=5G
+          ccache --zero-stats
+
+      - name: Increase the maximum number of opened files
+        run: |
+          ulimit -n 65535 || true
+          sudo chmod -R 777 /etc/security/* || true
+          echo "*   soft  nofile  1048576" | sudo tee -a /etc/security/limits.conf
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
 
       - name: Prepare log dir
         run: mkdir -p "$LOG_DIR"
 
-      - name: Configure (RelWithDebInfo, BUILD_TEST=ON, WITH_MIMALLOC=OFF)
+      # ----------------------------------------------------------------
+      # Build NeuG via tools/python_bind/make build (mirrors neug-test.yml).
+      # The build produces:
+      #   - the python extension under tools/python_bind/build/lib*
+      #   - the C++ binaries (incl. memory-leak gtest) under
+      #     tools/python_bind/build/neug_py_bind/tests/memory_leak/
+      # ----------------------------------------------------------------
+      - name: Build NeuG (RELEASE, BUILD_TEST=ON, WITH_MIMALLOC=OFF)
         run: |
-          cmake -S . -B build \
-            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            -DBUILD_TEST=ON \
-            -DWITH_MIMALLOC=OFF \
-            -DBUILD_HTTP_SERVER=OFF \
-            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-            2>&1 | tee "$LOG_DIR/cmake-configure.log"
+          set -o pipefail
+          # neug-dev image ships an env script with extra paths; ignore on
+          # bare github-hosted runners.
+          if [ -f /home/neug/.neug_env ]; then . /home/neug/.neug_env; fi
+          cd "${GITHUB_WORKSPACE}"
+          echo "CCache stats before build"
+          ccache --show-stats || true
+          export CI=ON  # use system-level arrow when available
+          export BUILD_TYPE=RELEASE
+          export CMAKE_BUILD_PARALLEL_LEVEL=$(printf '%s\n' "$(nproc)" 4 | awk 'NR==1 || $0<min { min=$0 } END { print min }')
+          export BUILD_EXECUTABLES=OFF
+          export BUILD_HTTP_SERVER=OFF
+          export BUILD_TEST=ON
+          export USE_NINJA=OFF
+          export WITH_MIMALLOC=OFF
+          export CC="ccache gcc"
+          export CXX="ccache g++"
+          cd tools/python_bind
+            make clean        2>&1 | tee    "$LOG_DIR/python-build.log"
+            make requirements 2>&1 | tee -a "$LOG_DIR/python-build.log"
+            make build        2>&1 | tee -a "$LOG_DIR/python-build.log"
+          echo "CCache stats after build"
+          ccache --show-stats || true
 
-      - name: Build neug + memory-leak gtest binaries
+      - name: Verify memory-leak gtest binaries exist
         run: |
-          cmake --build build \
-            --target neug test_node_create test_temporary_tables \
-            -- -j"$(nproc)" \
-            2>&1 | tee "$LOG_DIR/cmake-build.log"
+          set -e
+          BUILD_DIR="${GITHUB_WORKSPACE}/tools/python_bind/build/neug_py_bind"
+          ls -la "$BUILD_DIR/tests/memory_leak/" || true
+          test -x "$BUILD_DIR/tests/memory_leak/test_node_create"
+          test -x "$BUILD_DIR/tests/memory_leak/test_temporary_tables"
+          echo "[ok] both gtest binaries are built and executable."
 
       # ----------------------------------------------------------------
       # 1a) gtest -- test_node_create (long write-path soak)
@@ -105,7 +149,7 @@ jobs:
           GLOG_logtostderr:           '1'
         run: |
           set -o pipefail
-          ./build/tests/memory_leak/test_node_create \
+          ./tools/python_bind/build/neug_py_bind/tests/memory_leak/test_node_create \
             --gtest_color=no \
             2>&1 | tee "$LOG_DIR/test_node_create.log"
 
@@ -122,25 +166,16 @@ jobs:
           GLOG_logtostderr:           '1'
         run: |
           set -o pipefail
-          ./build/tests/memory_leak/test_temporary_tables \
+          ./tools/python_bind/build/neug_py_bind/tests/memory_leak/test_temporary_tables \
             --gtest_color=no \
             2>&1 | tee "$LOG_DIR/test_temporary_tables.log"
 
       # ----------------------------------------------------------------
-      # 2) Python-side RSS workload (uses the same NeuG build via wheel)
+      # 2) Python-side RSS workload — reuse the same build above
       # ----------------------------------------------------------------
-      - name: Build & install Python wheel (no mimalloc)
-        working-directory: tools/python_bind
-        env:
-          WITH_MIMALLOC: 'OFF'
-          BUILD_HTTP_SERVER: 'OFF'
-        run: |
-          set -o pipefail
-          make build 2>&1 | tee "$LOG_DIR/python-build.log"
-
       - name: python3 tests/memory_leak/test_memory_leak.py
         env:
-          PYTHONPATH: ${{ github.workspace }}/tools/python_bind:${{ github.workspace }}/tools/python_bind/build/lib
+          PYTHONPATH: ${{ github.workspace }}/tools/python_bind:${{ github.workspace }}/tools/python_bind/build/neug_py_bind
         run: |
           set -o pipefail
           python3 tests/memory_leak/test_memory_leak.py \
