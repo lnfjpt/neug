@@ -54,10 +54,6 @@ namespace neug {
 namespace test {
 namespace {
 
-// Counterpart to DuckDB's TestMemoryLeaks() guard.  Returns true only when
-// the user has explicitly opted in via NEUG_RUN_MEMORY_LEAK_TESTS=1.  Any
-// other value (including unset) keeps the test skipped, so default
-// `ctest`/`make test` runs are unaffected.
 bool RunMemoryLeakTests() {
   const char* env = std::getenv("NEUG_RUN_MEMORY_LEAK_TESTS");
   return env != nullptr && std::string(env) == "1";
@@ -75,8 +71,6 @@ int EnvInt(const char* name, int fallback) {
   }
 }
 
-// Counterpart to DuckDB's rand_str(): random alphanumeric ASCII (no quotes,
-// no escape characters) so we can safely splice it into Cypher literals.
 void RandStr(std::mt19937& rng, char* dest, std::size_t length) {
   static const char charset[] =
       "0123456789"
@@ -93,8 +87,6 @@ NeugDBConfig MakeConfig(const std::string& dir) {
   NeugDBConfig config;
   config.data_dir = dir;
   config.mode = DBMode::READ_WRITE;
-  // Match the spirit of DuckDB's `set memory_limit='100mb'` — keep the
-  // background out of our way and let the inner loop drive everything.
   config.enable_auto_compaction = false;
   config.compact_on_close = false;
   config.compact_csr = true;
@@ -126,8 +118,6 @@ void CloseAndRelease(std::unique_ptr<NeugDB>& db,
 
 }  // namespace
 
-// Cypher equivalent of DuckDB's "Test repeated appending small chunks to a
-// table" — long-running write workload meant for external memory observers.
 TEST(MemoryLeakTest, RepeatedCreateNodeChunks) {
   if (!RunMemoryLeakTests()) {
     GTEST_SKIP() << "memory-leak tests are skipped by default; "
@@ -151,8 +141,6 @@ TEST(MemoryLeakTest, RepeatedCreateNodeChunks) {
   std::shared_ptr<Connection> conn;
   OpenAndConnect(db, conn, db_path.string());
 
-  // Schema mirrors DuckDB's "test(col1 varchar, col2 varchar, col3 bigint,
-  // col4 bigint, col5 double)" with an extra primary key required by NeuG.
   {
     auto res = conn->Query(
         "CREATE NODE TABLE test (id INT64, col1 STRING, col2 STRING, "
@@ -174,11 +162,6 @@ TEST(MemoryLeakTest, RepeatedCreateNodeChunks) {
       char str[41];
       RandStr(rng, str, sizeof(str) - 1);
 
-      // Build the CREATE statement.  We splice values directly because
-      // (a) col1 is random alphanumeric so no escaping is needed and
-      // (b) we want every iteration to produce a distinct query text,
-      //     stressing planner / query-cache code paths just like the
-      //     DuckDB original stresses the appender chunk allocator.
       std::string q;
       q.reserve(192);
       q.append("CREATE (:test {id: ");
@@ -195,17 +178,12 @@ TEST(MemoryLeakTest, RepeatedCreateNodeChunks) {
       d1 += 1.25;
 
       auto res = conn->Query(q, "insert");
-      // DuckDB's test FAILs hard on appender errors; mirror that.
       ASSERT_TRUE(res) << "CREATE failed at i=" << i << ", j=" << j << ": "
                        << res.error().ToString();
     }
 
     if (checkpoint_every > 0 && i % checkpoint_every == 0) {
       std::printf("completed %d\n", i);
-      // NeuG does not expose a CHECKPOINT Cypher statement, so we mimic
-      // DuckDB's `duckdb_query("checkpoint", ...)` by closing and
-      // reopening the database — `checkpoint_on_close=true` in the config
-      // ensures the on-disk image is flushed.
       CloseAndRelease(db, conn);
       OpenAndConnect(db, conn, db_path.string());
     }
@@ -225,8 +203,6 @@ TEST(MemoryLeakTest, RepeatedCreateNodeChunks) {
   std::error_code ec;
   std::filesystem::remove_all(db_path, ec);
 
-  // Like DuckDB's `REQUIRE(1 == 1)` — the real verdict is delivered
-  // out-of-band by valgrind / massif / RSS sampling.
   EXPECT_TRUE(true);
 }
 

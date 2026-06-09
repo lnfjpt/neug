@@ -141,8 +141,6 @@ void CloseAndRelease(std::unique_ptr<NeugDB>& db,
   }
 }
 
-// Drain a query result so the executor really materialises every row,
-// matching what DuckDB's `con.Query("SELECT * ...")` does implicitly.
 void DrainResult(QueryResult& qr) {
   std::size_t rows = 0;
   for (auto it = qr.begin(); it != qr.end(); ++it) {
@@ -153,11 +151,6 @@ void DrainResult(QueryResult& qr) {
 
 }  // namespace
 
-// =============================================================================
-// 1) DuckDB: "Test in-memory database scanning from tables"
-//    NeuG variant: bulk-load N rows once, then loop MATCH ... RETURN to stress
-//    the scan and result-allocator paths.
-// =============================================================================
 TEST(MemoryLeakTempTableTest, RepeatedScanLargeTable) {
   if (!RunMemoryLeakTests()) {
     GTEST_SKIP() << "memory-leak tests are skipped by default; "
@@ -177,8 +170,6 @@ TEST(MemoryLeakTempTableTest, RepeatedScanLargeTable) {
       "CREATE NODE TABLE t1 (id INT64, s STRING, PRIMARY KEY(id));", "schema"))
       << "create t1 failed";
 
-  // One-shot bulk insert, equivalent to DuckDB's
-  //   create table t1 as select i, concat('thisisalongstring', i) ...
   std::mt19937 rng(0xBADCAFEu);
   for (int i = 0; i < bulk_rows; ++i) {
     char str[33];
@@ -195,10 +186,6 @@ TEST(MemoryLeakTempTableTest, RepeatedScanLargeTable) {
                      << res.error().ToString();
   }
 
-  // Loop scans.  DuckDB does `while(true)` and relies on an external
-  // observer to kill the process; we cap at NEUG_LEAK_SCAN_ITERS so the
-  // test reaches a well-defined end inside ctest while still giving
-  // valgrind a long enough window.
   const auto t0 = std::chrono::steady_clock::now();
   for (int i = 0; i < scan_iters; ++i) {
     auto res = conn->Query("MATCH (n:t1) RETURN n.id, n.s", "read");
@@ -219,10 +206,6 @@ TEST(MemoryLeakTempTableTest, RepeatedScanLargeTable) {
   EXPECT_TRUE(true);
 }
 
-// =============================================================================
-// 2) DuckDB: "Rollback create table"
-//    NeuG variant: CREATE TABLE / DROP TABLE alternating cycles (no rollback).
-// =============================================================================
 TEST(MemoryLeakTempTableTest, RepeatedCreateDropTable) {
   if (!RunMemoryLeakTests()) {
     GTEST_SKIP() << "memory-leak tests are skipped by default; "
@@ -267,13 +250,6 @@ TEST(MemoryLeakTempTableTest, RepeatedCreateDropTable) {
   EXPECT_TRUE(true);
 }
 
-// =============================================================================
-// 3) DuckDB: "DB temporary table insertion"
-//    NeuG variant: persistent t_src (bulk loaded once) + repeated cycles of
-//      CREATE NODE TABLE t_sink
-//      MATCH (s:t_src) CREATE (:t_sink {...})    -- copy-into
-//      DROP TABLE t_sink
-// =============================================================================
 TEST(MemoryLeakTempTableTest, RepeatedTempTableInsertion) {
   if (!RunMemoryLeakTests()) {
     GTEST_SKIP() << "memory-leak tests are skipped by default; "
@@ -312,8 +288,6 @@ TEST(MemoryLeakTempTableTest, RepeatedTempTableInsertion) {
                        << res.error().ToString();
     }
     {
-      // copy-into via single Cypher statement — closest analogue of
-      // DuckDB's "INSERT INTO t2 SELECT * FROM t1".
       auto res = conn->Query(
           "MATCH (s:t_src) CREATE (:t_sink {id: s.id});", "insert");
       ASSERT_TRUE(res) << "copy-into failed at i=" << i << ": "
