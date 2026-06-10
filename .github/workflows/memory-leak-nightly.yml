@@ -99,13 +99,6 @@ jobs:
       - name: Prepare log dir
         run: mkdir -p "$LOG_DIR"
 
-      # ----------------------------------------------------------------
-      # Build NeuG via tools/python_bind/make build (mirrors neug-test.yml).
-      # The build produces:
-      #   - the python extension under tools/python_bind/build/lib*
-      #   - the C++ binaries (incl. memory-leak gtest) under
-      #     tools/python_bind/build/neug_py_bind/tests/memory_leak/
-      # ----------------------------------------------------------------
       - name: Build NeuG (RELEASE, BUILD_TEST=ON, WITH_MIMALLOC=OFF)
         run: |
           . /home/neug/.neug_env
