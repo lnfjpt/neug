@@ -129,7 +129,7 @@ jobs:
       - name: Verify memory-leak gtest binaries exist
         run: |
           set -e
-          BUILD_DIR="${GITHUB_WORKSPACE}/tools/python_bind/build/neug_py_bind"
+          BUILD_DIR="${GITHUB_WORKSPACE}/build"
           ls -la "$BUILD_DIR/tests/memory_leak/" || true
           test -x "$BUILD_DIR/tests/memory_leak/test_node_create"
           test -x "$BUILD_DIR/tests/memory_leak/test_temporary_tables"
@@ -147,7 +147,7 @@ jobs:
           GLOG_logtostderr:           '1'
         run: |
           set -o pipefail
-          ./tools/python_bind/build/neug_py_bind/tests/memory_leak/test_node_create \
+          ./build/tests/memory_leak/test_node_create \
             --gtest_color=no \
             2>&1 | tee "$LOG_DIR/test_node_create.log"
 
@@ -164,7 +164,7 @@ jobs:
           GLOG_logtostderr:           '1'
         run: |
           set -o pipefail
-          ./tools/python_bind/build/neug_py_bind/tests/memory_leak/test_temporary_tables \
+          ./build/tests/memory_leak/test_temporary_tables \
             --gtest_color=no \
             2>&1 | tee "$LOG_DIR/test_temporary_tables.log"
 
@@ -173,7 +173,10 @@ jobs:
       # ----------------------------------------------------------------
       - name: python3 tests/memory_leak/test_memory_leak.py
         env:
-          PYTHONPATH: ${{ github.workspace }}/tools/python_bind:${{ github.workspace }}/tools/python_bind/build/neug_py_bind
+          # `tools/python_bind` makes `import neug` work; neug/__init__.py
+          # then auto-discovers the build/lib.* extdir produced by setup.py,
+          # so an explicit binary dir on PYTHONPATH is unnecessary.
+          PYTHONPATH: ${{ github.workspace }}/tools/python_bind
         run: |
           set -o pipefail
           python3 tests/memory_leak/test_memory_leak.py \
