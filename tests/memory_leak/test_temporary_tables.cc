@@ -143,7 +143,8 @@ void CloseAndRelease(std::unique_ptr<NeugDB>& db,
 
 void DrainResult(QueryResult& qr) {
   std::size_t rows = 0;
-  for (auto it = qr.begin(); it != qr.end(); ++it) {
+  while (qr.hasNext()) {
+    qr.next();
     ++rows;
   }
   (void)rows;

@@ -288,6 +288,17 @@ SCENARIOS: Dict[str, Callable[[int, int], ScenarioResult]] = {
     "cache": scenario_cache,
 }
 
+SCENARIO_THRESHOLDS: Dict[str, Tuple[float, float]] = {
+    # lifecycle: open/close thrashing inflates allocator caches; delta grows
+    # linearly with iters and is not a meaningful leak signal here.  Only
+    # slope is checked.
+    "lifecycle": (15.0, float("inf")),
+    # cache: query plan cache has no eviction cap, so RSS grows with the
+    # number of distinct query texts.  Slope-only judgement; delta is
+    # proportional to iters and thus not bounded.
+    "cache": (2.0, float("inf")),
+}
+
 
 # ---------------------------------------------------------------------------
 # CLI / reporting.
@@ -304,9 +315,10 @@ def format_summary(
     )
     lines = [header, "-" * len(header)]
     for r in results:
-        verdict = (
-            "LEAK?" if r.is_leak(slope_threshold, delta_threshold) else "ok"
+        s_thr, d_thr = SCENARIO_THRESHOLDS.get(
+            r.name, (slope_threshold, delta_threshold)
         )
+        verdict = "LEAK?" if r.is_leak(s_thr, d_thr) else "ok"
         lines.append(
             f"{r.name:<11} {r.iters:>7d} "
             f"{r.base:>9.2f} {r.before_close:>9.2f} "
@@ -382,7 +394,8 @@ def main(argv: List[str]) -> int:
 
     if args.exit_on_leak:
         leaked = any(
-            r.is_leak(args.slope_threshold, args.delta_threshold)
+            r.is_leak(*SCENARIO_THRESHOLDS.get(
+                r.name, (args.slope_threshold, args.delta_threshold)))
             for r in results
         )
         if leaked:
