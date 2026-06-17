@@ -98,7 +98,9 @@ jobs:
         fi
 
     - name: Install dependencies
-      run: bash scripts/install_deps.sh
+      run: |
+        brew install ccache
+        bash scripts/install_deps.sh
 
     - name: Cache CCache
       uses: actions/cache@v4
