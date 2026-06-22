@@ -17,6 +17,7 @@
 #pragma once
 
 #include <arrow/filesystem/filesystem.h>
+#include <arrow/result.h>
 #include <fnmatch.h>
 #include <memory>
 #include <string>
