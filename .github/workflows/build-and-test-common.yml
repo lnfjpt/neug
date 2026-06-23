@@ -40,6 +40,9 @@ jobs:
   build_and_test:
     runs-on: ${{ fromJSON(inputs.runs-on) }}
     container: ${{ inputs.container-json != '{}' && fromJSON(inputs.container-json) || null }}
+    defaults:
+      run:
+        shell: bash
     steps:
     - name: checkout
       id: checkout
