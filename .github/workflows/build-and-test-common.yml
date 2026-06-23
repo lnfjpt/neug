@@ -96,15 +96,16 @@ jobs:
       run: |
         rm -rf /__w/_tool/Python
 
-    - name: Install ccache (Linux)
+    - name: Install dependencies (Linux)
       if: inputs.os-type == 'linux'
       run: |
         sudo apt-get update && sudo apt-get install -y ccache
 
-    - name: Install ccache (macOS)
+    - name: Install dependencies (macOS)
       if: inputs.os-type == 'macos'
       run: |
         brew install ccache
+        bash scripts/install_deps.sh
 
     - name: Cache CCache
       uses: actions/cache@v4
