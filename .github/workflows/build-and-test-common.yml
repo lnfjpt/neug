@@ -164,7 +164,17 @@ jobs:
 
     - name: Build NeuG
       run: |
-        source ~/.neug_env
+        NEUG_ENV_FOUND=false
+        for env_file in /home/neug/.neug_env ~/.neug_env /github/home/.neug_env; do
+          if [ -f "$env_file" ]; then
+            source "$env_file"
+            NEUG_ENV_FOUND=true
+            break
+          fi
+        done
+        if [ "$NEUG_ENV_FOUND" != "true" ]; then
+          echo "Warning: .neug_env not found in any known location"
+        fi
         cd ${GITHUB_WORKSPACE}/
         echo "CCache stats before build"
         ccache --show-stats
