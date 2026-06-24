@@ -71,6 +71,7 @@ jobs:
             - '!tests/extensions/**'
             - '.github/workflows/Linux.yml'
             - '.github/workflows/OSX.yml'
+            - '.github/workflows/build-and-test-common.yml'
             - 'scripts/install_deps.sh'
             - 'include/**'
             - 'CMakeLists.txt'

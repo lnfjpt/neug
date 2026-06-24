@@ -13,6 +13,7 @@ on:
       - 'tools/utils/**'
       - 'tests/**'
       - '.github/workflows/OSX.yml'
+      - '.github/workflows/build-and-test-common.yml'
       - 'scripts/install_deps.sh'
       - 'include/**'
       - 'CMakeLists.txt'
@@ -28,6 +29,7 @@ on:
       - 'tools/utils/**'
       - 'tests/**'
       - '.github/workflows/OSX.yml'
+      - '.github/workflows/build-and-test-common.yml'
       - 'scripts/install_deps.sh'
       - 'include/**'
       - 'CMakeLists.txt'
@@ -61,5 +63,5 @@ jobs:
       os-type: macos
       enable-java-test: false
       enable-coverage: false
-      enable-gopt-test: false
+      enable-gopt-test: true
       event-name: ${{ github.event_name }}
