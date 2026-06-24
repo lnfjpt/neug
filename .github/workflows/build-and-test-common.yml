@@ -66,6 +66,7 @@ jobs:
             - 'proto/**'
             - 'third_party/**'
             - 'tools/python_bind/**'
+            - 'tools/java_driver/**'
             - 'tests/**'
             - '!tests/extension/**'
             - '!tests/extensions/**'
