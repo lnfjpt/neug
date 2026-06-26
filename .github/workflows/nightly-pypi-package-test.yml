@@ -2,7 +2,8 @@ name: Nightly PyPI Package Test
 
 on:
   schedule:
-    - cron: '0 18 * * *'
+    # Trigger at 22:00 CST (14:00 UTC) every day
+    - cron: '0 14 * * *'
   workflow_dispatch:
   pull_request:
     branches:
