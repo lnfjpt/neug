@@ -60,7 +60,7 @@ jobs:
       run: |
         cd ${GITHUB_WORKSPACE}/tools/python_bind/
         pip install -r requirements.txt
-        pip install -r requirements_dev.txt
+        pip install pytest
         pip install pyarrow==24.0.0
 
     - name: Run Extension Python Tests
