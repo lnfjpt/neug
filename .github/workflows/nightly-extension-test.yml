@@ -63,6 +63,23 @@ jobs:
         pip install pytest
         pip install pyarrow
 
+    - name: Install NeuG extensions
+      run: |
+        cd ${GITHUB_WORKSPACE}/tools/python_bind/
+        python3 -c "
+import logging
+logging.basicConfig(level=logging.INFO)
+from neug import Database, Connection
+
+db = Database(':memory:')
+conn = Connection(db)
+for ext in ['httpfs', 'parquet', 'gds']:
+    print(f'Installing extension: {ext}')
+    conn.execute(f'INSTALL EXTENSION {ext}')
+    print(f'Extension {ext} installed successfully')
+print('All extensions installed successfully')
+"
+
     - name: Run Extension Python Tests
       env:
         FLEX_DATA_DIR: ${GITHUB_WORKSPACE}/example_dataset/tinysnb
