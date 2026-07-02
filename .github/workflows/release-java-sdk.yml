@@ -59,10 +59,11 @@ jobs:
           echo "=== POM version ==="
           mvn -B help:evaluate -Dexpression=project.version -q -DforceStdout
 
-      - name: Publish to Maven Central
+      - name: Dry-run deploy (no actual publish)
         working-directory: tools/java_driver
-        run: mvn -B deploy -DskipTests -Dgpg.skip=true
-        env:
-          MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
-          MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
-          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          echo "=== Deploy dry-run (skipping actual publish to Maven Central) ==="
+          mvn -B deploy -DskipTests -Dgpg.skip=true \
+            -DaltDeploymentRepository=local::default::file://${PWD}/target/local-repo
+          echo "=== Dry-run complete, artifacts in target/local-repo ==="
+          find target/local-repo -type f -exec ls -lh {} \;
