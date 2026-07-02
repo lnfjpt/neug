@@ -25,7 +25,7 @@ the neug PyPI wheel does not ship compiled extension binaries.
 import logging
 import sys
 
-from neug import Connection, Database
+from neug import Database
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -34,11 +34,11 @@ EXTENSIONS = ["httpfs", "parquet", "gds"]
 
 
 def install_extensions():
-    db = Database(":memory:")
-    conn = Connection(db)
+    db = Database(":memory:", mode="w")
+    conn = db.connect()
     for ext in EXTENSIONS:
         logger.info("Installing extension: %s", ext)
-        conn.execute(f"INSTALL EXTENSION {ext}")
+        conn.execute(f"INSTALL {ext}")
         logger.info("Extension %s installed successfully", ext)
     logger.info("All extensions installed successfully")
 
