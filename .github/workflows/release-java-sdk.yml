@@ -14,7 +14,8 @@ jobs:
   release-java-sdk:
     name: Build and Publish Java SDK
     runs-on: ubuntu-22.04
-    if: github.repository == 'alibaba/neug'
+    # TEMP: relaxed for release-flow verification on fork
+    # if: github.repository == 'alibaba/neug'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -27,11 +28,12 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
           cache: maven
-          server-id: central
-          server-username: MAVEN_CENTRAL_USERNAME
-          server-password: MAVEN_CENTRAL_PASSWORD
-          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
-          gpg-passphrase: GPG_PASSPHRASE
+          # TEMP: Maven Central credentials and GPG signing disabled for verification
+          # server-id: central
+          # server-username: MAVEN_CENTRAL_USERNAME
+          # server-password: MAVEN_CENTRAL_PASSWORD
+          # gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+          # gpg-passphrase: GPG_PASSPHRASE
 
       - name: Build and Test Java SDK
         working-directory: tools/java_driver
@@ -41,9 +43,25 @@ jobs:
         working-directory: tools/java_driver
         run: mvn -B versions:set -DremoveSnapshot -DgenerateBackupPoms=false
 
+      - name: Print version after SNAPSHOT removal
+        working-directory: tools/java_driver
+        run: mvn -B help:evaluate -Dexpression=project.version -q -DforceStdout
+
+      - name: Package and install (skip deploy & GPG)
+        working-directory: tools/java_driver
+        run: mvn -B install -DskipTests -Dgpg.skip=true
+
+      - name: Verify build artifacts
+        working-directory: tools/java_driver
+        run: |
+          echo "=== Build artifacts ==="
+          find target -name '*.jar' -exec ls -lh {} \;
+          echo "=== POM version ==="
+          mvn -B help:evaluate -Dexpression=project.version -q -DforceStdout
+
       - name: Publish to Maven Central
         working-directory: tools/java_driver
-        run: mvn -B deploy -DskipTests
+        run: mvn -B deploy -DskipTests -Dgpg.skip=true
         env:
           MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
