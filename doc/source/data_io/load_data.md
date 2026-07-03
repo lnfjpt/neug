@@ -4,6 +4,10 @@
 
 You can apply standard relational operations — projection, filtering, type casting, aggregation, sorting — directly on the loaded data. This makes `LOAD FROM` ideal for data exploration, validation, and ad-hoc analysis.
 
+> **Tip:** To materialize loaded data as a persistent or temporary graph, use [`COPY FROM` / `COPY TEMP`](import_data). `LOAD FROM` can be used as a subquery inside `COPY` to preprocess data before import.
+
+---
+
 ## Basic Syntax
 
 ```cypher
@@ -41,6 +45,8 @@ Example:
 LOAD FROM "person.csv" (delim=',', header=true)
 RETURN name, age;
 ```
+
+> **Array limitation:** `LOAD FROM` CSV currently does not parse CSV fields into fixed-size `ARRAY` values. A quoted field such as `"[1,2,3]"` is read as a `STRING`, and casting CSV columns to `INT64[3]`/other fixed-size array targets inside `LOAD FROM` is not supported yet.
 
 ### JSON / JSONL
 

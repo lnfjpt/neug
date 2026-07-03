@@ -31,6 +31,7 @@
 #include "neug/storages/allocators.h"
 #include "neug/storages/checkpoint_manager.h"
 #include "neug/storages/graph/property_graph.h"
+#include "neug/storages/graph_snapshot_store.h"
 #include "neug/transaction/compact_transaction.h"
 #include "neug/transaction/insert_transaction.h"
 #include "neug/transaction/read_transaction.h"
@@ -96,7 +97,7 @@ class Schema;
  * **Resource Management:**
  * - File locking prevents concurrent database access from multiple processes
  * - Automatic WAL (Write-Ahead Log) for crash recovery
- * - Configurable checkpoint and compaction on close
+ * - Configurable checkpoint on close
  *
  * @note For query execution, obtain a Connection via Connect() method.
  * @note Always call Close() before destroying the NeugDB instance to ensure
@@ -138,14 +139,13 @@ class NeugDB {
    * @endcode
    *
    * @param data_dir Path to the graph data directory
-   * @param max_num_threads Maximum threads for concurrent operations.
-   *        If 0, uses hardware concurrency (number of CPU cores)
+   * @param max_thread_num Maximum threads for concurrent operations.
+   *        If 0, uses hardware concurrency (number of CPU cores), falling
+   *        back to 1 if the runtime cannot detect it.
    * @param mode Database access mode (READ_ONLY or READ_WRITE)
    * @param planner_kind Query planner type: "gopt" (Graph Optimizer) or
    * "greedy"
    * @param enable_auto_compaction Enable background auto-compaction thread
-   * @param compact_csr Compact CSR structures during auto-compaction
-   * @param compact_on_close Perform compaction when closing database
    * @param checkpoint_on_close Create checkpoint (persist data) when closing
    *
    * @return true if database opened successfully, false otherwise
@@ -158,11 +158,11 @@ class NeugDB {
    *
    * @since v0.1.0
    */
-  bool Open(const std::string& data_dir, int32_t max_num_threads = 0,
+  bool Open(const std::string& data_dir, int32_t max_thread_num = 0,
             const DBMode mode = DBMode::READ_WRITE,
             const std::string& planner_kind = "gopt",
-            bool enable_auto_compaction = false, bool compact_csr = true,
-            bool compact_on_close = true, bool checkpoint_on_close = true);
+            bool enable_auto_compaction = false,
+            bool checkpoint_on_close = true);
 
   /**
    * @brief Open the database with a configuration object.
@@ -174,7 +174,7 @@ class NeugDB {
    * @code{.cpp}
    * neug::NeugDBConfig config;
    * config.data_dir = "/path/to/graph";
-   * config.thread_num = 8;
+   * config.max_thread_num = 8;
    * config.mode = neug::DBMode::READ_WRITE;
    * config.memory_level = 1;  // Use memory-mapped virtual memory
    * config.enable_auto_compaction = true;
@@ -197,8 +197,7 @@ class NeugDB {
    * @brief Close the database and release all resources.
    *
    * Performs a graceful shutdown of the database. Depending on configuration:
-   * - Creates checkpoint if checkpoint_on_close is enabled
-   * - Performs compaction if compact_on_close is enabled
+   * - Creates a checkpoint if checkpoint_on_close is enabled
    * - Closes all open connections
    * - Releases file locks
    *
@@ -278,12 +277,20 @@ class NeugDB {
    */
   void CloseAllConnection();
 
-  inline const PropertyGraph& graph() const { return graph_; }
-  inline PropertyGraph& graph() { return graph_; }
+  inline const PropertyGraph& graph() const {
+    return snapshot_store_->CurrentSnapshot();
+  }
 
-  inline const Schema& schema() const { return graph_.schema(); }
+  inline const Schema& schema() const {
+    return snapshot_store_->CurrentSnapshot().schema();
+  }
 
-  std::string work_dir() const { return ws_.db_dir(); }
+  inline GraphSnapshotStore& graph_snapshot_store() { return *snapshot_store_; }
+  inline const GraphSnapshotStore& graph_snapshot_store() const {
+    return *snapshot_store_;
+  }
+
+  std::string work_dir() const { return checkpoint_mgr_.db_dir(); }
 
   inline const NeugDBConfig& config() const { return config_; }
 
@@ -299,18 +306,18 @@ class NeugDB {
   void preprocessConfig();
   void initAllocators(const std::string& allocator_dir);
   void openGraphAndIngestWals();
-  void ingestWals(IWalParser& parser);
+  void ingestWals(IWalParser& parser, PropertyGraph& graph);
   void initPlannerAndQueryProcessor();
+
   /**
-   * @brief Create a checkpoint of the current graph.
-   * @param force_compaction Whether to force compaction before creating the
-   * checkpoint.
-   * @note force_compaction will override the config_.compact_on_close setting.
-   * force_compaction should be set to true after the database is recovered from
-   * wals to remove the tombstone type/data, otherwise the graph size will keep
-   * growing.
+   * @brief Create a checkpoint of the current graph. Must not be called while a
+   * NeugDBService is running.
+   *
+   * A durable checkpoint is a transaction timeline reset boundary: it always
+   * compacts storage timestamps before dumping, and a successful checkpoint
+   * resets last_ts_ to 0.
    */
-  void createCheckpoint(bool force_compaction = false, bool reopen = true);
+  void createCheckpoint(bool reopen = true);
 
   friend class NeugDBSession;
   friend class neug::NeugDBService;
@@ -320,13 +327,14 @@ class NeugDB {
   // Configuration and settings
   std::atomic<bool> closed_;
   bool is_pure_memory_;
-  int thread_num_;
+  int max_thread_num_;
   NeugDBConfig config_;
-  CheckpointManager ws_;
+  CheckpointManager checkpoint_mgr_;
   std::unique_ptr<FileLock> file_lock_;
 
-  // The property graph and transaction controls
-  PropertyGraph graph_;
+  // GraphSnapshotStore - manages multiple versions of PropertyGraph for MVCC
+  std::unique_ptr<GraphSnapshotStore> snapshot_store_;
+
   std::shared_ptr<IGraphPlanner> planner_;
   std::shared_ptr<QueryProcessor> query_processor_;
   std::unique_ptr<ConnectionManager> connection_manager_;

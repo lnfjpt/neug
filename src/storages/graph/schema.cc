@@ -23,9 +23,13 @@
 #include <yaml-cpp/yaml.h>
 #include <algorithm>
 #include <filesystem>
+#include <fstream>
+#include <limits>
 #include <ostream>
 #include <stdexcept>
 #include <type_traits>
+#include "neug/common/extra_type_info.h"
+#include "neug/storages/module/module_factory.h"
 #include "neug/utils/exception/exception.h"
 #include "neug/utils/id_indexer.h"
 #include "neug/utils/pb_utils.h"
@@ -78,6 +82,11 @@ bool LabelIndexer::add(const std::string& name, label_t& lid) {
     free_list_.pop_back();
     keys_[lid] = name;
   } else {
+    if (keys_.size() >=
+        static_cast<size_t>(std::numeric_limits<label_t>::max()) + 1) {
+      THROW_OVERFLOW_EXCEPTION(
+          "Label overflow: cannot create more than 256 labels");
+    }
     lid = static_cast<label_t>(keys_.size());
     keys_.push_back(name);
   }
@@ -253,17 +262,6 @@ bool VertexSchema::is_property_soft_deleted(const std::string& prop) const {
   }
 }
 
-void VertexSchema::revert_delete_properties(
-    const std::vector<std::string>& names) {
-  for (size_t i = 0; i < names.size(); i++) {
-    auto it = std::find(property_names.begin(), property_names.end(), names[i]);
-    if (it != property_names.end()) {
-      size_t j = static_cast<size_t>(std::distance(property_names.begin(), it));
-      vprop_soft_deleted[j] = false;
-    }
-  }
-}
-
 bool VertexSchema::has_property(const std::string& prop) const {
   assert(primary_keys.size() == 1);
   if (std::get<1>(primary_keys[0]) == prop) {
@@ -338,6 +336,10 @@ bool EdgeSchema::is_bundled() const {
     return true;
   } else if (properties.size() == 1 &&
              properties[0].id() == DataTypeId::kVarchar) {
+    return false;
+  } else if (properties.size() == 1 &&
+             (properties[0].id() == DataTypeId::kArray ||
+              properties[0].id() == DataTypeId::kList)) {
     return false;
   } else if (properties.size() > 1) {
     return false;
@@ -434,21 +436,6 @@ bool EdgeSchema::is_property_soft_deleted(const std::string& prop) const {
   }
 }
 
-void EdgeSchema::revert_delete_properties(
-    const std::vector<std::string>& names) {
-  for (size_t i = 0; i < names.size(); i++) {
-    auto it = std::find(property_names.begin(), property_names.end(), names[i]);
-    if (it != property_names.end()) {
-      size_t j = static_cast<size_t>(std::distance(property_names.begin(), it));
-      eprop_soft_deleted[j] = false;
-    } else {
-      THROW_RUNTIME_ERROR("Property name " + names[i] +
-                          " does not exist for edge " + edge_label_name +
-                          " from " + src_label_name + " to " + dst_label_name);
-    }
-  }
-}
-
 int32_t EdgeSchema::get_property_index(const std::string& prop) const {
   auto it = std::find(property_names.begin(), property_names.end(), prop);
   if (it != property_names.end()) {
@@ -497,7 +484,7 @@ void Schema::AddVertexLabel(
     const std::vector<std::string>& property_names,
     const std::vector<std::tuple<DataType, std::string, size_t>>& primary_key,
     size_t max_vnum, const std::string& description,
-    const std::vector<Value>& default_property_values) {
+    const std::vector<Value>& default_property_values, bool temporary) {
   label_t v_label_id = vertex_label_to_index(label);
   if (vlabel_tomb_.get(v_label_id)) {  // Add back a deleted label
     vlabel_tomb_.reset(v_label_id);
@@ -511,8 +498,10 @@ void Schema::AddVertexLabel(
   v_schemas_[v_label_id] = std::make_shared<VertexSchema>(
       label, property_types, property_names, primary_key,
       default_property_values, description, max_vnum);
+  v_schemas_[v_label_id]->temporary = temporary;
   VLOG(10) << "Add vertex label: " << label << ", id: " << (int) v_label_id
-           << ", prop size: " << v_schemas_[v_label_id]->property_names.size();
+           << ", prop size: " << v_schemas_[v_label_id]->property_names.size()
+           << ", temporary: " << temporary;
 }
 
 void Schema::AddEdgeLabel(
@@ -521,7 +510,7 @@ void Schema::AddEdgeLabel(
     const std::vector<std::string>& prop_names, EdgeStrategy oe,
     EdgeStrategy ie, bool oe_mutable, bool ie_mutable,
     std::optional<std::string> sort_key_for_nbr, const std::string& description,
-    const std::vector<Value>& default_property_values) {
+    const std::vector<Value>& default_property_values, bool temporary) {
   label_t src_label_id = vertex_label_to_index(src_label);
   label_t dst_label_id = vertex_label_to_index(dst_label);
   label_t edge_label_id = edge_label_to_index(edge_label);
@@ -543,8 +532,46 @@ void Schema::AddEdgeLabel(
   if (elabel_triplet_tomb_.get(label_id)) {  // Add back a deleted label
     elabel_triplet_tomb_.reset(label_id);
   }
+  e_schemas_[label_id]->temporary = temporary;
   VLOG(10) << "Add edge label: " << edge_label << ", id: " << (int) label_id
-           << ", prop size: " << e_schemas_[label_id]->property_names.size();
+           << ", prop size: " << e_schemas_[label_id]->property_names.size()
+           << ", temporary: " << temporary;
+}
+
+bool Schema::is_vertex_label_temporary(label_t label) const {
+  if (label >= v_schemas_.size() || !v_schemas_[label]) {
+    return false;
+  }
+  return v_schemas_[label]->temporary;
+}
+
+bool Schema::is_edge_label_temporary(uint32_t edge_triplet_key) const {
+  auto it = e_schemas_.find(edge_triplet_key);
+  if (it == e_schemas_.end() || !it->second) {
+    return false;
+  }
+  return it->second->temporary;
+}
+
+std::vector<label_t> Schema::get_temporary_vertex_labels() const {
+  std::vector<label_t> result;
+  auto v_labels = get_vertex_label_ids();
+  for (auto label : v_labels) {
+    if (v_schemas_[label]->temporary) {
+      result.push_back(label);
+    }
+  }
+  return result;
+}
+
+std::vector<uint32_t> Schema::get_temporary_edge_triplet_keys() const {
+  std::vector<uint32_t> result;
+  for (const auto& [key, schema] : e_schemas_) {
+    if (schema && schema->temporary) {
+      result.push_back(key);
+    }
+  }
+  return result;
 }
 
 label_t Schema::vertex_label_num() const {
@@ -1938,6 +1965,9 @@ neug::result<Schema> Schema::LoadFromYamlNode(
   }
 }
 
+/// Dump schema to YAML. Always includes all labels (including temporary).
+/// For persistence paths that need to exclude temporary labels, call
+/// StripTemporary() first to obtain a temp-free Schema, then DumpToYaml.
 neug::result<YAML::Node> Schema::DumpToYaml(const Schema& schema) {
   YAML::Node graph_node;
   graph_node["name"] = schema.GetGraphName();
@@ -1965,65 +1995,6 @@ void Schema::AddVertexProperties(
                                          properties_default_values);
 }
 
-bool Schema::is_vertex_label_soft_deleted(const std::string& label) const {
-  auto v_label_id = get_vertex_label_id_internal(label);
-  return vlabel_tomb_.get(v_label_id) && !v_schemas_[v_label_id]->empty();
-}
-
-bool Schema::is_vertex_label_soft_deleted(label_t v_label) const {
-  return vlabel_tomb_.get(v_label) && !v_schemas_[v_label]->empty();
-}
-
-bool Schema::is_edge_label_soft_deleted(const std::string& src_label,
-                                        const std::string& dst_label,
-                                        const std::string& edge_label) const {
-  label_t src = get_vertex_label_id_internal(src_label);
-  label_t dst = get_vertex_label_id_internal(dst_label);
-  label_t edge = get_edge_label_id_internal(edge_label);
-  return is_edge_label_soft_deleted(src, dst, edge);
-}
-
-bool Schema::is_edge_label_soft_deleted(label_t src_label, label_t dst_label,
-                                        label_t edge_label) const {
-  assert(is_vertex_label_valid(src_label) ||
-         is_vertex_label_soft_deleted(src_label));
-  assert(is_vertex_label_valid(dst_label) ||
-         is_vertex_label_soft_deleted(dst_label));
-  assert(is_edge_label_valid(edge_label));
-  uint32_t index = generate_edge_label(src_label, dst_label, edge_label);
-  return elabel_triplet_tomb_.get(index) && e_schemas_.count(index) > 0;
-}
-
-bool Schema::is_vertex_property_soft_deleted(
-    const std::string& label, const std::string& property_name) const {
-  auto v_label_id = get_vertex_label_id(label);
-  assert(v_label_id < v_schemas_.size());
-  return v_schemas_[v_label_id]->is_property_soft_deleted(property_name);
-}
-
-bool Schema::is_vertex_property_soft_deleted(
-    label_t v_label, const std::string& property_name) const {
-  assert(v_label < v_schemas_.size());
-  return v_schemas_[v_label]->is_property_soft_deleted(property_name);
-}
-
-bool Schema::is_edge_property_soft_deleted(
-    const std::string& src_label, const std::string& dst_label,
-    const std::string& edge_label, const std::string& property_name) const {
-  label_t src = get_vertex_label_id(src_label);
-  label_t dst = get_vertex_label_id(dst_label);
-  label_t edge = get_edge_label_id(edge_label);
-  return is_edge_property_soft_deleted(src, dst, edge, property_name);
-}
-
-bool Schema::is_edge_property_soft_deleted(
-    label_t src_label, label_t dst_label, label_t edge_label,
-    const std::string& property_name) const {
-  uint32_t index = generate_edge_label(src_label, dst_label, edge_label);
-  assert(e_schemas_.count(index) > 0);
-  return e_schemas_.at(index)->is_property_soft_deleted(property_name);
-}
-
 void Schema::RenameVertexProperties(
     const std::string& label, const std::vector<std::string>& properties_names,
     const std::vector<std::string>& properties_renames) {
@@ -2039,14 +2010,6 @@ void Schema::DeleteVertexProperties(
   auto v_label_id = get_vertex_label_id(label);
   assert(v_label_id < v_schemas_.size());
   v_schemas_[v_label_id]->delete_properties(properties_names, is_soft);
-}
-
-void Schema::RevertDeleteVertexProperties(
-    const std::string& label,
-    const std::vector<std::string>& properties_names) {
-  auto v_label_id = get_vertex_label_id(label);
-  assert(v_label_id < v_schemas_.size());
-  v_schemas_[v_label_id]->revert_delete_properties(properties_names);
 }
 
 void Schema::DeleteVertexLabel(const std::string& label, bool is_soft) {
@@ -2181,24 +2144,6 @@ void Schema::DeleteEdgeProperties(
   e_schemas_.at(index)->delete_properties(properties_names, is_soft);
 }
 
-void Schema::RevertDeleteEdgeProperties(
-    label_t src_label, label_t dst_label, label_t edge_label,
-    const std::vector<std::string>& properties_names) {
-  uint32_t index = generate_edge_label(src_label, dst_label, edge_label);
-  assert(e_schemas_.count(index) > 0);
-  e_schemas_.at(index)->revert_delete_properties(properties_names);
-}
-
-void Schema::RevertDeleteEdgeProperties(
-    const std::string& src_label, const std::string& dst_label,
-    const std::string& edge_label,
-    const std::vector<std::string>& properties_names) {
-  label_t src = get_vertex_label_id(src_label);
-  label_t dst = get_vertex_label_id(dst_label);
-  label_t edge = get_edge_label_id(edge_label);
-  RevertDeleteEdgeProperties(src, dst, edge, properties_names);
-}
-
 std::string Schema::get_edge_strategy(label_t src_label, label_t dst_label,
                                       label_t edge_label) const {
   uint32_t index = generate_edge_label(src_label, dst_label, edge_label);
@@ -2229,34 +2174,6 @@ std::string Schema::get_edge_strategy(label_t src_label, label_t dst_label,
     }
   } else {
     THROW_RUNTIME_ERROR("oe_strategy should not be none");
-  }
-}
-
-void Schema::RevertDeleteVertexLabel(const std::string& v_label) {
-  label_t v_label_id = get_vertex_label_id_internal(v_label);
-  if (vlabel_tomb_.get(v_label_id)) {
-    vlabel_tomb_.reset(v_label_id);
-  }
-}
-
-void Schema::RevertDeleteEdgeLabel(label_t e_label_id) {
-  if (elabel_tomb_.get(e_label_id)) {
-    elabel_tomb_.reset(e_label_id);
-  }
-}
-
-void Schema::RevertDeleteEdgeLabel(const std::string& src_label,
-                                   const std::string& dst_label,
-                                   const std::string& edge_label) {
-  label_t src = get_vertex_label_id_internal(src_label);
-  label_t dst = get_vertex_label_id_internal(dst_label);
-  label_t edge = get_edge_label_id_internal(edge_label);
-  uint32_t index = generate_edge_label(src, dst, edge);
-  if (index < elabel_triplet_tomb_.size() && elabel_triplet_tomb_.get(index)) {
-    elabel_triplet_tomb_.reset(index);
-  }
-  if (elabel_tomb_.get(edge)) {
-    elabel_tomb_.reset(edge);
   }
 }
 
@@ -2403,67 +2320,105 @@ Schema Schema::Clone() const {
   return cloned;
 }
 
-InArchive& operator<<(InArchive& in_archive, const DataType& type) {
-  auto id = type.id();
-  in_archive << id;
-  auto type_info = type.getExtraTypeInfo();
-  if (type_info) {
-    in_archive << (char) 1;
-    if (id == DataTypeId::kList) {
-      const auto& list_type_info = type_info->Cast<ListTypeInfo>();
-      in_archive << list_type_info.child_type;
-    } else if (id == DataTypeId::kStruct) {
-      const auto& struct_type_info = type_info->Cast<StructTypeInfo>();
-      const auto& child_types = struct_type_info.child_types;
-      in_archive << (size_t) child_types.size();
-      for (const auto& child_type : child_types) {
-        in_archive << child_type;
-      }
-    } else if (id == DataTypeId::kVarchar) {
-      const auto& varchar_type_info = type_info->Cast<StringTypeInfo>();
-      in_archive << varchar_type_info.max_length;
-    } else {
-      THROW_NOT_SUPPORTED_EXCEPTION(
-          "unsupported data type with extra type info - " + type.ToString());
-    }
-  } else {
-    in_archive << (char) 0;  // indicate no extra type info
-  }
-  return in_archive;
-}
+Schema Schema::StripTemporary() const {
+  Schema stripped;
+  stripped.name_ = name_;
+  stripped.id_ = id_;
+  stripped.description_ = description_;
 
-OutArchive& operator>>(OutArchive& out_archive, DataType& type) {
-  DataTypeId id;
-  out_archive >> id;
-
-  char has_extra_type_info;
-  out_archive >> has_extra_type_info;
-  if (has_extra_type_info) {
-    if (id == DataTypeId::kList) {
-      DataType child_type;
-      out_archive >> child_type;
-      type = DataType::List(child_type);
-    } else if (id == DataTypeId::kStruct) {
-      size_t child_types_size;
-      out_archive >> child_types_size;
-      std::vector<DataType> child_types(child_types_size);
-      for (size_t i = 0; i < child_types_size; ++i) {
-        out_archive >> child_types[i];
-      }
-      type = DataType::Struct(child_types);
-    } else if (id == DataTypeId::kVarchar) {
-      size_t max_length;
-      out_archive >> max_length;
-      type = DataType::Varchar(max_length);
-    } else {
-      THROW_NOT_SUPPORTED_EXCEPTION(
-          "unsupported data type with extra type info - " + std::to_string(id));
+  // Copy non-temporary vertex labels, preserving original label IDs.
+  for (label_t v_label = 0; v_label < v_schemas_.size(); ++v_label) {
+    if (vlabel_tomb_.get(v_label)) {
+      continue;
     }
-  } else {
-    type = DataType(id);
+    if (is_vertex_label_temporary(v_label)) {
+      continue;
+    }
+    auto vlabel_name = vlabel_indexer_.get_key(v_label);
+    label_t new_label;
+    if (!stripped.vlabel_indexer_.add(vlabel_name, new_label)) {
+      THROW_RUNTIME_ERROR("StripTemporary: failed to add vertex label: " +
+                          vlabel_name);
+    }
+    if (stripped.v_schemas_.size() <= new_label) {
+      stripped.v_schemas_.resize(new_label + 1);
+    }
+    stripped.v_schemas_[new_label] =
+        std::make_shared<VertexSchema>(*v_schemas_[v_label]);
   }
 
-  return out_archive;
+  // Copy non-temporary edge labels in original label ID order.
+  // An edge label should be copied only if it's used by at least one
+  // non-temporary edge triplet.
+  std::vector<bool> is_non_temp_edge_label(elabel_indexer_.num_slots(), false);
+  for (const auto& [key, es] : e_schemas_) {
+    if (!es || es->temporary) {
+      continue;
+    }
+    label_t src_v, dst_v, e_label;
+    std::tie(src_v, dst_v, e_label) = parse_edge_label(key);
+    // Skip edges whose src/dst vertices are temporary.
+    if (is_vertex_label_temporary(src_v) || is_vertex_label_temporary(dst_v)) {
+      continue;
+    }
+    is_non_temp_edge_label[e_label] = true;
+  }
+
+  // Iterate in sequential label ID order to preserve deterministic ordering.
+  for (label_t e_label = 0;
+       e_label < static_cast<label_t>(is_non_temp_edge_label.size());
+       ++e_label) {
+    if (!is_non_temp_edge_label[e_label]) {
+      continue;
+    }
+    if (elabel_tomb_.get(e_label)) {
+      continue;
+    }
+    auto elabel_name = elabel_indexer_.get_key(e_label);
+    label_t new_label;
+    if (!stripped.elabel_indexer_.add(elabel_name, new_label)) {
+      THROW_RUNTIME_ERROR("StripTemporary: failed to add edge label: " +
+                          elabel_name);
+    }
+  }
+
+  // Copy non-temporary edge triplets.
+  uint32_t max_e_triplet_index = 0;
+  for (const auto& [key, es] : e_schemas_) {
+    if (!es || es->temporary) {
+      continue;
+    }
+    label_t src_v, dst_v, e_label;
+    std::tie(src_v, dst_v, e_label) = parse_edge_label(key);
+    if (vlabel_tomb_.get(src_v) || vlabel_tomb_.get(dst_v) ||
+        elabel_tomb_.get(e_label) ||
+        !is_edge_triplet_valid(src_v, dst_v, e_label)) {
+      continue;
+    }
+    // Skip edges whose src/dst vertices are temporary.
+    if (is_vertex_label_temporary(src_v) || is_vertex_label_temporary(dst_v)) {
+      continue;
+    }
+    auto src_name = vlabel_indexer_.get_key(src_v);
+    auto dst_name = vlabel_indexer_.get_key(dst_v);
+    auto e_name = elabel_indexer_.get_key(e_label);
+    label_t new_src, new_dst, new_e;
+    if (!stripped.vlabel_indexer_.get_index(src_name, new_src) ||
+        !stripped.vlabel_indexer_.get_index(dst_name, new_dst) ||
+        !stripped.elabel_indexer_.get_index(e_name, new_e)) {
+      continue;  // label was stripped (temporary)
+    }
+    auto new_index = stripped.generate_edge_label(new_src, new_dst, new_e);
+    max_e_triplet_index = std::max(max_e_triplet_index, new_index);
+    stripped.e_schemas_[new_index] = std::make_shared<EdgeSchema>(*es);
+  }
+
+  stripped.vlabel_tomb_.resize(stripped.v_schemas_.size());
+  stripped.elabel_tomb_.resize(stripped.elabel_indexer_.size());
+  stripped.elabel_triplet_tomb_.resize(
+      stripped.e_schemas_.empty() ? 0 : max_e_triplet_index + 1);
+
+  return stripped;
 }
 
 InArchive& operator<<(InArchive& archive, const VertexSchema& v_schema) {
@@ -2516,7 +2471,7 @@ OutArchive& operator>>(OutArchive& archive, EdgeSchema& e_schema) {
 }
 
 result<rapidjson::Document> Schema::ToJson() const {
-  auto yaml_result = to_yaml();
+  auto yaml_result = Schema::DumpToYaml(*this);
   if (!yaml_result) {
     return tl::unexpected(yaml_result.error());
   }

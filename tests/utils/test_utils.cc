@@ -19,8 +19,8 @@
 #include <gtest/gtest.h>
 
 #include "neug/execution/common/types/value.h"
-#include "neug/utils/arrow_utils.h"
 #include "neug/utils/bitset.h"
+#include "neug/utils/datetime_parsers.h"
 #include "neug/utils/encoder.h"
 #include "neug/utils/pb_utils.h"
 #include "neug/utils/string_view_vector.h"
@@ -235,266 +235,60 @@ TEST_F(BitsetTest, BoundaryBits) {
   EXPECT_EQ(bs.count(), 3);
 }
 
-class ArrowUtilsTest : public ::testing::Test {
+class DatetimeParserTest : public ::testing::Test {
  protected:
   void SetUp() override {}
   void TearDown() override {}
 };
 
-// =============== LDBCTimeStampParser Tests ===============
-
-TEST_F(ArrowUtilsTest, LDBCTimeStampParser_YYYYMMDD) {
-  LDBCTimeStampParser parser;
-  int64_t result;
-
-  EXPECT_TRUE(parser("2023-01-01", 10, arrow::TimeUnit::MILLI, &result));
-
-  int64_t expected_ms = 1672531200LL * 1000;
-  EXPECT_EQ(result, expected_ms);
+TEST_F(DatetimeParserTest, Timestamp_YYYYMMDD) {
+  int64_t result = 0;
+  EXPECT_TRUE(neug::utils::parse_timestamp(
+      "2023-01-01", 10, neug::utils::TimestampUnit::kMilli, &result));
+  EXPECT_EQ(result, 1672531200LL * 1000);
 }
 
-TEST_F(ArrowUtilsTest, LDBCTimeStampParser_WithTime) {
-  LDBCTimeStampParser parser;
-  int64_t result;
-
-  EXPECT_TRUE(
-      parser("2023-06-15 14:30:45", 19, arrow::TimeUnit::MILLI, &result));
-
-  int64_t expected_ms = 1686839445LL * 1000;
-  EXPECT_EQ(result, expected_ms);
+TEST_F(DatetimeParserTest, Timestamp_WithTime) {
+  int64_t result = 0;
+  EXPECT_TRUE(neug::utils::parse_timestamp(
+      "2023-06-15 14:30:45", 19, neug::utils::TimestampUnit::kMilli, &result));
+  EXPECT_EQ(result, 1686839445LL * 1000);
 }
 
-TEST_F(ArrowUtilsTest, LDBCTimeStampParser_WithTZ_Z) {
-  LDBCTimeStampParser parser;
-  int64_t result;
-
-  EXPECT_TRUE(
-      parser("2023-06-15T14:30:45Z", 20, arrow::TimeUnit::MILLI, &result));
-
-  int64_t expected_ms = 1686839445LL * 1000;
-  EXPECT_EQ(result, expected_ms);
+TEST_F(DatetimeParserTest, Timestamp_WithTZ) {
+  int64_t result = 0;
+  EXPECT_TRUE(neug::utils::parse_timestamp(
+      "2023-06-15T14:30:45Z", 20, neug::utils::TimestampUnit::kMilli, &result));
+  EXPECT_EQ(result, 1686839445LL * 1000);
 }
 
-TEST_F(ArrowUtilsTest, LDBCTimeStampParser_WithTZ_HHMM) {
-  LDBCTimeStampParser parser;
-  int64_t result;
-
-  EXPECT_TRUE(
-      parser("2023-06-15 14:30:45+0800", 24, arrow::TimeUnit::MILLI, &result));
-
-  int64_t expected_utc_seconds = 1686810645LL;
-  int64_t expected_ms = expected_utc_seconds * 1000;
-  EXPECT_EQ(result, expected_ms);
-
-  EXPECT_TRUE(
-      parser("2023-06-15 14:30:45+08:00", 25, arrow::TimeUnit::MILLI, &result));
-
-  expected_utc_seconds = 1686810645LL;
-  expected_ms = expected_utc_seconds * 1000;
-  EXPECT_EQ(result, expected_ms);
-
-  EXPECT_TRUE(
-      parser("2023-06-15 14:30:45+08", 22, arrow::TimeUnit::MILLI, &result));
-
-  expected_utc_seconds = 1686810645LL;
-  expected_ms = expected_utc_seconds * 1000;
-  EXPECT_EQ(result, expected_ms);
+TEST_F(DatetimeParserTest, Timestamp_WithFractionalSeconds) {
+  int64_t result = 0;
+  EXPECT_TRUE(neug::utils::parse_timestamp("2023-06-15 14:30:45.123", 23,
+                                           neug::utils::TimestampUnit::kMilli,
+                                           &result));
+  EXPECT_EQ(result, 1686839445LL * 1000 + 123);
 }
 
-TEST_F(ArrowUtilsTest, LDBCTimeStampParser_WithFractionalSeconds) {
-  LDBCTimeStampParser parser;
-  int64_t result;
-
-  EXPECT_TRUE(
-      parser("2023-06-15 14:30:45.123", 23, arrow::TimeUnit::MILLI, &result));
-
-  int64_t base_seconds = 1686839445LL;
-  int64_t expected_ms = base_seconds * 1000 + 123;
-  EXPECT_EQ(result, expected_ms);
+TEST_F(DatetimeParserTest, Timestamp_InvalidInput) {
+  int64_t result = 0;
+  EXPECT_FALSE(neug::utils::parse_timestamp(
+      "2023", 4, neug::utils::TimestampUnit::kMilli, &result));
+  EXPECT_FALSE(neug::utils::parse_timestamp(
+      "2023/01/01", 10, neug::utils::TimestampUnit::kMilli, &result));
 }
 
-TEST_F(ArrowUtilsTest, LDBCTimeStampParser_Microseconds) {
-  LDBCTimeStampParser parser;
-  int64_t result;
-
-  EXPECT_TRUE(parser("2023-06-15 14:30:45.123456", 26, arrow::TimeUnit::MICRO,
-                     &result));
-
-  int64_t base_seconds = 1686839445LL;
-  int64_t expected_micros = base_seconds * 1000000 + 123456;
-  EXPECT_EQ(result, expected_micros);
-}
-
-TEST_F(ArrowUtilsTest, LDBCTimeStampParser_InvalidInput) {
-  LDBCTimeStampParser parser;
-  int64_t result;
-
-  EXPECT_FALSE(parser("2023", 4, arrow::TimeUnit::MILLI, &result));
-
-  EXPECT_FALSE(parser("2023/01/01", 10, arrow::TimeUnit::MILLI, &result));
-
-  EXPECT_FALSE(
-      parser("2023-01-01X12:00:00", 19, arrow::TimeUnit::MILLI, &result));
-}
-
-TEST_F(ArrowUtilsTest, LDBCTimeStampParser_function) {
-  LDBCTimeStampParser parser;
-  EXPECT_STREQ(parser.kind(), "LDBC timestamp parser");
-  EXPECT_STREQ(parser.format(), "EmptyFormat");
-}
-
-// =============== LDBCLongDateParser Tests ===============
-
-TEST_F(ArrowUtilsTest, LDBCLongDateParser_Valid) {
-  LDBCLongDateParser parser;
-  int64_t result;
-
-  EXPECT_TRUE(parser("1672531200000", 13, arrow::TimeUnit::MILLI, &result));
-
+TEST_F(DatetimeParserTest, EpochTimestamp_Valid) {
+  int64_t result = 0;
+  EXPECT_TRUE(neug::utils::parse_epoch_timestamp(
+      "1672531200000", 13, neug::utils::TimestampUnit::kMilli, &result));
   EXPECT_EQ(result, 1672531200000LL);
 }
 
-TEST_F(ArrowUtilsTest, LDBCLongDateParser_WithSubseconds) {
-  LDBCLongDateParser parser;
-  int64_t result;
-
-  EXPECT_TRUE(parser("1672531200123", 13, arrow::TimeUnit::MILLI, &result));
-
-  EXPECT_EQ(result, 1672531200123LL);
-}
-
-TEST_F(ArrowUtilsTest, LDBCLongDateParser_Invalid) {
-  LDBCLongDateParser parser;
-  int64_t result;
-
-  EXPECT_FALSE(parser("abc123def", 9, arrow::TimeUnit::MILLI, &result));
-}
-
-TEST_F(ArrowUtilsTest, LDBCLongDateParser_function) {
-  LDBCLongDateParser parser;
-  EXPECT_STREQ(parser.kind(), "LDBC timestamp parser");
-  EXPECT_STREQ(parser.format(), "LongDateFormat");
-}
-
-// =============== TypeConverter Tests ===============
-
-TEST_F(ArrowUtilsTest, TypeConverter_Bool) {
-  EXPECT_EQ(TypeConverter<bool>::property_type(), DataTypeId::kBoolean);
-  auto arrow_type = TypeConverter<bool>::ArrowTypeValue();
-  EXPECT_TRUE(arrow_type->Equals(arrow::boolean()));
-}
-
-TEST_F(ArrowUtilsTest, TypeConverter_Int32) {
-  EXPECT_EQ(TypeConverter<int32_t>::property_type(), DataTypeId::kInt32);
-  auto arrow_type = TypeConverter<int32_t>::ArrowTypeValue();
-  EXPECT_TRUE(arrow_type->Equals(arrow::int32()));
-}
-
-TEST_F(ArrowUtilsTest, TypeConverter_UInt32) {
-  EXPECT_EQ(TypeConverter<uint32_t>::property_type(), DataTypeId::kUInt32);
-  auto arrow_type = TypeConverter<uint32_t>::ArrowTypeValue();
-  EXPECT_TRUE(arrow_type->Equals(arrow::uint32()));
-}
-
-TEST_F(ArrowUtilsTest, TypeConverter_Int64) {
-  EXPECT_EQ(TypeConverter<int64_t>::property_type(), DataTypeId::kInt64);
-  auto arrow_type = TypeConverter<int64_t>::ArrowTypeValue();
-  EXPECT_TRUE(arrow_type->Equals(arrow::int64()));
-}
-
-TEST_F(ArrowUtilsTest, TypeConverter_UInt64) {
-  EXPECT_EQ(TypeConverter<uint64_t>::property_type(), DataTypeId::kUInt64);
-  auto arrow_type = TypeConverter<uint64_t>::ArrowTypeValue();
-  EXPECT_TRUE(arrow_type->Equals(arrow::uint64()));
-}
-
-TEST_F(ArrowUtilsTest, TypeConverter_Double) {
-  EXPECT_EQ(TypeConverter<double>::property_type(), DataTypeId::kDouble);
-  auto arrow_type = TypeConverter<double>::ArrowTypeValue();
-  EXPECT_TRUE(arrow_type->Equals(arrow::float64()));
-}
-
-TEST_F(ArrowUtilsTest, TypeConverter_Float) {
-  EXPECT_EQ(TypeConverter<float>::property_type(), DataTypeId::kFloat);
-  auto arrow_type = TypeConverter<float>::ArrowTypeValue();
-  EXPECT_TRUE(arrow_type->Equals(arrow::float32()));
-}
-
-TEST_F(ArrowUtilsTest, TypeConverter_String) {
-  EXPECT_EQ(TypeConverter<std::string>::property_type(), DataTypeId::kVarchar);
-  auto arrow_type = TypeConverter<std::string>::ArrowTypeValue();
-  EXPECT_TRUE(arrow_type->Equals(arrow::utf8()));
-}
-
-TEST_F(ArrowUtilsTest, TypeConverter_StringView) {
-  EXPECT_EQ(TypeConverter<std::string_view>::property_type(),
-            DataTypeId::kVarchar);
-  auto arrow_type = TypeConverter<std::string_view>::ArrowTypeValue();
-  EXPECT_TRUE(arrow_type->Equals(arrow::utf8()));
-}
-
-TEST_F(ArrowUtilsTest, TypeConverter_Date) {
-  EXPECT_EQ(TypeConverter<Date>::property_type(), DataTypeId::kDate);
-  auto arrow_type = TypeConverter<Date>::ArrowTypeValue();
-  auto expected = arrow::date64();
-  EXPECT_TRUE(arrow_type->Equals(expected));
-}
-
-TEST_F(ArrowUtilsTest, TypeConverter_DateTime) {
-  EXPECT_EQ(TypeConverter<DateTime>::property_type(), DataTypeId::kTimestampMs);
-  auto arrow_type = TypeConverter<DateTime>::ArrowTypeValue();
-  auto expected = arrow::timestamp(arrow::TimeUnit::MILLI);
-  EXPECT_TRUE(arrow_type->Equals(expected));
-}
-
-TEST_F(ArrowUtilsTest, TypeConverter_Interval) {
-  EXPECT_EQ(TypeConverter<Interval>::property_type(), DataTypeId::kInterval);
-  auto arrow_type = TypeConverter<Interval>::ArrowTypeValue();
-  auto expected = arrow::utf8();
-  EXPECT_TRUE(arrow_type->Equals(expected));
-}
-
-// =============== PropertyTypeToArrowType Function Tests ===============
-
-TEST_F(ArrowUtilsTest, PropertyTypeToArrowType_Function) {
-  auto bool_type = PropertyTypeToArrowType(DataTypeId::kBoolean);
-  EXPECT_TRUE(bool_type->Equals(arrow::boolean()));
-
-  auto int32_type = PropertyTypeToArrowType(DataTypeId::kInt32);
-  EXPECT_TRUE(int32_type->Equals(arrow::int32()));
-
-  auto int64_type = PropertyTypeToArrowType(DataTypeId::kInt64);
-  EXPECT_TRUE(int64_type->Equals(arrow::int64()));
-
-  auto uint32_type = PropertyTypeToArrowType(DataTypeId::kUInt32);
-  EXPECT_TRUE(uint32_type->Equals(arrow::uint32()));
-
-  auto uint64_type = PropertyTypeToArrowType(DataTypeId::kUInt64);
-  EXPECT_TRUE(uint64_type->Equals(arrow::uint64()));
-
-  auto double_type = PropertyTypeToArrowType(DataTypeId::kDouble);
-  EXPECT_TRUE(double_type->Equals(arrow::float64()));
-
-  auto float_type = PropertyTypeToArrowType(DataTypeId::kFloat);
-  EXPECT_TRUE(float_type->Equals(arrow::float32()));
-
-  auto date_type = PropertyTypeToArrowType(DataTypeId::kDate);
-  EXPECT_TRUE(date_type->Equals(arrow::date64()));
-
-  auto string_type = PropertyTypeToArrowType(DataTypeId::kVarchar);
-  EXPECT_TRUE(string_type->Equals(arrow::utf8()));
-}
-
-// =============== Parser Metadata Tests ===============
-
-TEST_F(ArrowUtilsTest, ParserMetadata) {
-  LDBCTimeStampParser ts_parser;
-  EXPECT_STREQ(ts_parser.kind(), "LDBC timestamp parser");
-  EXPECT_STREQ(ts_parser.format(), "EmptyFormat");
-
-  LDBCLongDateParser long_parser;
-  EXPECT_STREQ(long_parser.kind(), "LDBC timestamp parser");
-  EXPECT_STREQ(long_parser.format(), "LongDateFormat");
+TEST_F(DatetimeParserTest, EpochTimestamp_Invalid) {
+  int64_t result = 0;
+  EXPECT_FALSE(neug::utils::parse_epoch_timestamp(
+      "abc123def", 9, neug::utils::TimestampUnit::kMilli, &result));
 }
 
 class StringViewVectorTest : public ::testing::Test {
@@ -1079,6 +873,21 @@ class PBUtilsTest : public ::testing::Test {
   void TearDown() override {}
 };
 
+namespace {
+
+void SetInt32ArrayType(::common::DataType* type, uint32_t fixed_length) {
+  auto* array_type = type->mutable_array();
+  array_type->set_fixed_length(fixed_length);
+  array_type->mutable_component_type()->set_primitive_type(
+      ::common::PrimitiveType::DT_SIGNED_INT32);
+}
+
+void SetNodeType(::common::ExprOpr* op, const ::common::DataType& type) {
+  *op->mutable_node_type()->mutable_data_type() = type;
+}
+
+}  // namespace
+
 TEST_F(PBUtilsTest, MultiplicityToStorageStrategy) {
   EdgeStrategy oe, ie;
 
@@ -1120,7 +929,7 @@ TEST_F(PBUtilsTest, PropertyDefsToTuple_Valid) {
   prop1->set_name("age");
   prop1->mutable_type()->set_primitive_type(
       ::common::PrimitiveType::DT_SIGNED_INT32);
-  prop1->mutable_default_value()->set_i32(18);
+  prop1->mutable_default_expr()->add_operators()->mutable_const_()->set_i32(18);
 
   auto* prop2 = props.Add();
   prop2->set_name("name");
@@ -1165,7 +974,8 @@ TEST_F(PBUtilsTest, PropertyDefsToTuple_AllPrimitiveTypes) {
     auto* p = props.Add();
     p->set_name("flag");
     p->mutable_type()->set_primitive_type(::common::PrimitiveType::DT_BOOL);
-    p->mutable_default_value()->set_boolean(true);
+    p->mutable_default_expr()->add_operators()->mutable_const_()->set_boolean(
+        true);
   }
   // INT64
   {
@@ -1173,7 +983,8 @@ TEST_F(PBUtilsTest, PropertyDefsToTuple_AllPrimitiveTypes) {
     p->set_name("big_id");
     p->mutable_type()->set_primitive_type(
         ::common::PrimitiveType::DT_SIGNED_INT64);
-    p->mutable_default_value()->set_i64(9876543210LL);
+    p->mutable_default_expr()->add_operators()->mutable_const_()->set_i64(
+        9876543210LL);
   }
   // UINT32
   {
@@ -1181,7 +992,7 @@ TEST_F(PBUtilsTest, PropertyDefsToTuple_AllPrimitiveTypes) {
     p->set_name("count");
     p->mutable_type()->set_primitive_type(
         ::common::PrimitiveType::DT_UNSIGNED_INT32);
-    p->mutable_default_value()->set_u32(100U);
+    p->mutable_default_expr()->add_operators()->mutable_const_()->set_u32(100U);
   }
   // UINT64
   {
@@ -1189,21 +1000,22 @@ TEST_F(PBUtilsTest, PropertyDefsToTuple_AllPrimitiveTypes) {
     p->set_name("big_count");
     p->mutable_type()->set_primitive_type(
         ::common::PrimitiveType::DT_UNSIGNED_INT64);
-    p->mutable_default_value()->set_u64(123456789012345ULL);
+    p->mutable_default_expr()->add_operators()->mutable_const_()->set_u64(
+        123456789012345ULL);
   }
   // FLOAT
   {
     auto* p = props.Add();
     p->set_name("weight");
     p->mutable_type()->set_primitive_type(::common::PrimitiveType::DT_FLOAT);
-    p->mutable_default_value()->set_f32(1.5f);
+    p->mutable_default_expr()->add_operators()->mutable_const_()->set_f32(1.5f);
   }
   // DOUBLE
   {
     auto* p = props.Add();
     p->set_name("ratio");
     p->mutable_type()->set_primitive_type(::common::PrimitiveType::DT_DOUBLE);
-    p->mutable_default_value()->set_f64(3.14);
+    p->mutable_default_expr()->add_operators()->mutable_const_()->set_f64(3.14);
   }
 
   auto result = property_defs_to_value(props);
@@ -1230,6 +1042,104 @@ TEST_F(PBUtilsTest, PropertyDefsToTuple_AllPrimitiveTypes) {
   EXPECT_DOUBLE_EQ(tuples[5].second.GetValue<double>(), 3.14);
 }
 
+TEST_F(PBUtilsTest, PropertyDefsToTuple_ArrayDefaultExpression) {
+  google::protobuf::RepeatedPtrField<::physical::PropertyDef> props;
+
+  auto* prop = props.Add();
+  prop->set_name("values");
+  SetInt32ArrayType(prop->mutable_type(), 2);
+
+  auto* array_op = prop->mutable_default_expr()->add_operators();
+  auto* to_array = array_op->mutable_to_array();
+  SetNodeType(array_op, prop->type());
+  to_array->add_fields()->add_operators()->mutable_const_()->set_i32(1);
+  to_array->add_fields()->add_operators()->mutable_const_()->set_i32(2);
+
+  auto result = property_defs_to_value(props);
+  ASSERT_TRUE(result.has_value());
+  ASSERT_EQ(result.value().size(), 1U);
+  const auto& value = result.value()[0].second;
+  EXPECT_EQ(value.type().id(), DataTypeId::kArray);
+  const auto& children = execution::ArrayValue::GetChildren(value);
+  ASSERT_EQ(children.size(), 2U);
+  EXPECT_EQ(children[0].GetValue<int32_t>(), 1);
+  EXPECT_EQ(children[1].GetValue<int32_t>(), 2);
+}
+
+TEST_F(PBUtilsTest, PropertyDefsToTuple_NestedArrayDefaultExpression) {
+  google::protobuf::RepeatedPtrField<::physical::PropertyDef> props;
+
+  auto* prop = props.Add();
+  prop->set_name("matrix");
+  auto* outer_type = prop->mutable_type()->mutable_array();
+  outer_type->set_fixed_length(2);
+  auto* inner_type = outer_type->mutable_component_type()->mutable_array();
+  inner_type->set_fixed_length(2);
+  inner_type->mutable_component_type()->set_primitive_type(
+      ::common::PrimitiveType::DT_SIGNED_INT32);
+
+  auto* outer_array =
+      prop->mutable_default_expr()->add_operators()->mutable_to_array();
+  auto* outer_op = prop->mutable_default_expr()->mutable_operators(0);
+  SetNodeType(outer_op, prop->type());
+  const auto& inner_array_type = prop->type().array().component_type();
+  for (int row = 0; row < 2; ++row) {
+    auto* inner_op = outer_array->add_fields()->add_operators();
+    auto* inner_array = inner_op->mutable_to_array();
+    SetNodeType(inner_op, inner_array_type);
+    inner_array->add_fields()->add_operators()->mutable_const_()->set_i32(
+        row * 2 + 1);
+    inner_array->add_fields()->add_operators()->mutable_const_()->set_i32(
+        row * 2 + 2);
+  }
+
+  auto result = property_defs_to_value(props);
+  ASSERT_TRUE(result.has_value());
+  const auto& rows =
+      execution::ArrayValue::GetChildren(result.value()[0].second);
+  ASSERT_EQ(rows.size(), 2U);
+  const auto& first_row = execution::ArrayValue::GetChildren(rows[0]);
+  const auto& second_row = execution::ArrayValue::GetChildren(rows[1]);
+  ASSERT_EQ(first_row.size(), 2U);
+  ASSERT_EQ(second_row.size(), 2U);
+  EXPECT_EQ(first_row[0].GetValue<int32_t>(), 1);
+  EXPECT_EQ(first_row[1].GetValue<int32_t>(), 2);
+  EXPECT_EQ(second_row[0].GetValue<int32_t>(), 3);
+  EXPECT_EQ(second_row[1].GetValue<int32_t>(), 4);
+}
+
+TEST_F(PBUtilsTest, PropertyDefsToTuple_ArrayDefaultMissingNodeType) {
+  google::protobuf::RepeatedPtrField<::physical::PropertyDef> props;
+
+  auto* prop = props.Add();
+  prop->set_name("values");
+  SetInt32ArrayType(prop->mutable_type(), 2);
+
+  auto* to_array =
+      prop->mutable_default_expr()->add_operators()->mutable_to_array();
+  to_array->add_fields()->add_operators()->mutable_const_()->set_i32(1);
+  to_array->add_fields()->add_operators()->mutable_const_()->set_i32(2);
+
+  auto result = property_defs_to_value(props);
+  EXPECT_FALSE(result.has_value());
+}
+
+TEST_F(PBUtilsTest, PropertyDefsToTuple_ArrayDefaultRejectsList) {
+  google::protobuf::RepeatedPtrField<::physical::PropertyDef> props;
+
+  auto* prop = props.Add();
+  prop->set_name("values");
+  SetInt32ArrayType(prop->mutable_type(), 2);
+
+  auto* to_list =
+      prop->mutable_default_expr()->add_operators()->mutable_to_list();
+  to_list->add_fields()->add_operators()->mutable_const_()->set_i32(1);
+  to_list->add_fields()->add_operators()->mutable_const_()->set_i32(2);
+
+  auto result = property_defs_to_value(props);
+  EXPECT_FALSE(result.has_value());
+}
+
 TEST_F(PBUtilsTest, PropertyDefsToTuple_StringTypes) {
   // VarChar with default max_length
   {
@@ -1237,17 +1147,25 @@ TEST_F(PBUtilsTest, PropertyDefsToTuple_StringTypes) {
     auto* p = props.Add();
     p->set_name("tag");
     p->mutable_type()->mutable_string()->mutable_var_char();
-    p->mutable_default_value()->set_str("hello");
+    p->mutable_default_expr()->add_operators()->mutable_const_()->set_str(
+        "hello");
 
     auto result = property_defs_to_value(props);
     ASSERT_TRUE(result.has_value());
     auto& tuples = result.value();
     ASSERT_EQ(tuples.size(), 1U);
     EXPECT_EQ(tuples[0].second.type().id(), DataTypeId::kVarchar);
+    ASSERT_NE(tuples[0].second.type().getExtraTypeInfo(), nullptr);
+    EXPECT_EQ(tuples[0]
+                  .second.type()
+                  .getExtraTypeInfo()
+                  ->Cast<StringTypeInfo>()
+                  .max_length,
+              STRING_DEFAULT_MAX_LENGTH);
     EXPECT_EQ(tuples[0].second.GetValue<std::string>(), "hello");
   }
 
-  // VarChar with explicit max_length
+  // VarChar with explicit max_length and no default expression.
   {
     google::protobuf::RepeatedPtrField<::physical::PropertyDef> props;
     auto* p = props.Add();
@@ -1257,6 +1175,35 @@ TEST_F(PBUtilsTest, PropertyDefsToTuple_StringTypes) {
     auto result = property_defs_to_value(props);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value()[0].second.type().id(), DataTypeId::kVarchar);
+    ASSERT_NE(result.value()[0].second.type().getExtraTypeInfo(), nullptr);
+    EXPECT_EQ(result.value()[0]
+                  .second.type()
+                  .getExtraTypeInfo()
+                  ->Cast<StringTypeInfo>()
+                  .max_length,
+              64U);
+  }
+
+  // VarChar with explicit max_length and default expression.
+  {
+    google::protobuf::RepeatedPtrField<::physical::PropertyDef> props;
+    auto* p = props.Add();
+    p->set_name("short_tag");
+    p->mutable_type()->mutable_string()->mutable_var_char()->set_max_length(64);
+    p->mutable_default_expr()->add_operators()->mutable_const_()->set_str(
+        "hello");
+
+    auto result = property_defs_to_value(props);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value()[0].second.type().id(), DataTypeId::kVarchar);
+    ASSERT_NE(result.value()[0].second.type().getExtraTypeInfo(), nullptr);
+    EXPECT_EQ(result.value()[0]
+                  .second.type()
+                  .getExtraTypeInfo()
+                  ->Cast<StringTypeInfo>()
+                  .max_length,
+              64U);
+    EXPECT_EQ(result.value()[0].second.GetValue<std::string>(), "hello");
   }
 
   // LongText
@@ -1308,6 +1255,44 @@ TEST_F(PBUtilsTest, PropertyDefsToTuple_TemporalTypes) {
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value()[0].second.type().id(), DataTypeId::kInterval);
   }
+}
+
+TEST_F(PBUtilsTest, PropertyDefsToTuple_TemporalDefaultExpressions) {
+  google::protobuf::RepeatedPtrField<::physical::PropertyDef> props;
+
+  {
+    auto* p = props.Add();
+    p->set_name("birthday");
+    p->mutable_type()->mutable_temporal()->mutable_date32();
+    p->mutable_default_expr()->add_operators()->mutable_to_date()->set_date_str(
+        "2023-06-15");
+  }
+  {
+    auto* p = props.Add();
+    p->set_name("created_at");
+    p->mutable_type()->mutable_temporal()->mutable_date_time();
+    p->mutable_default_expr()
+        ->add_operators()
+        ->mutable_to_datetime()
+        ->set_datetime_str("2023-12-25 10:30:45");
+  }
+  {
+    auto* p = props.Add();
+    p->set_name("duration");
+    p->mutable_type()->mutable_temporal()->mutable_interval();
+    p->mutable_default_expr()
+        ->add_operators()
+        ->mutable_to_interval()
+        ->set_interval_str("3days");
+  }
+
+  auto result = property_defs_to_value(props);
+  ASSERT_TRUE(result.has_value());
+  const auto& tuples = result.value();
+  ASSERT_EQ(tuples.size(), 3U);
+  EXPECT_EQ(tuples[0].second.type().id(), DataTypeId::kDate);
+  EXPECT_EQ(tuples[1].second.type().id(), DataTypeId::kTimestampMs);
+  EXPECT_EQ(tuples[2].second.type().id(), DataTypeId::kInterval);
 }
 
 TEST_F(PBUtilsTest, PropertyDefsToTuple_InvalidType_DT_ANY) {

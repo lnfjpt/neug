@@ -15,6 +15,7 @@
 
 #include "neug/storages/csr/mutable_csr.h"
 
+#include "neug/storages/checkpoint_manifest.h"
 #include "neug/storages/module/module_factory.h"
 
 #include <errno.h>
@@ -35,7 +36,7 @@
 #include "neug/storages/container/container_utils.h"
 #include "neug/storages/container/file_mmap_container.h"
 #include "neug/utils/exception/exception.h"
-#include "neug/utils/file_utils.h"
+#include "neug/utils/io/file/file_utils.h"
 #include "neug/utils/property/types.h"
 #include "neug/utils/spinlock.h"
 
@@ -47,18 +48,18 @@ void MutableCsr<EDATA_T>::Open(Checkpoint& ckp,
                                MemoryLevel memory_level) {
   unsorted_since_ = std::stoull(descriptor.get("unsorted_since").value_or("0"));
   edge_num_.store(std::stoull(descriptor.get("edge_num").value_or("0")));
-  degree_list_ = ckp.OpenFile(
+  degree_list_ = std::shared_ptr<IDataContainer>(ckp.OpenFile(
       descriptor.get_path(ModuleDescriptor::kDegreeListPath).value_or(""),
-      memory_level);
-  cap_list_ = ckp.OpenFile(
+      memory_level));
+  cap_list_ = std::shared_ptr<IDataContainer>(ckp.OpenFile(
       descriptor.get_path(ModuleDescriptor::kCapacityListPath).value_or(""),
-      memory_level);
-  nbr_list_ = ckp.OpenFile(
+      memory_level));
+  nbr_list_ = std::shared_ptr<IDataContainer>(ckp.OpenFile(
       descriptor.get_path(ModuleDescriptor::kNbrListPath).value_or(""),
-      memory_level);
+      memory_level));
   auto v_cap = degree_list_->GetDataSize() / sizeof(int);
-  adj_list_buffer_ =
-      ckp.CreateRuntimeContainer(v_cap * sizeof(nbr_t*), memory_level);
+  adj_list_buffer_ = std::shared_ptr<IDataContainer>(
+      ckp.CreateRuntimeContainer(v_cap * sizeof(nbr_t*), memory_level));
   if (cap_list_->GetDataSize() != degree_list_->GetDataSize()) {
     THROW_INTERNAL_EXCEPTION(
         "Capacity list size does not match degree list size");
@@ -84,6 +85,14 @@ void MutableCsr<EDATA_T>::Open(Checkpoint& ckp,
         " but degree list implies " + std::to_string(edge_count) +
         ", desc: " + descriptor.ToJsonString());
   }
+  refresh_prefetch_policy();
+}
+
+template <typename EDATA_T>
+void MutableCsr<EDATA_T>::refresh_prefetch_policy() {
+  auto degree_stats = compute_csr_degree_distribution(
+      reinterpret_cast<int*>(degree_list_->GetData()), size());
+  prefetch_policy_ = create_csr_prefetch_policy(degree_stats);
 }
 
 template <typename NBR_T>
@@ -108,7 +117,8 @@ bool is_nbr_list_unmodified(MD5_CTX& ctx, FileHeader& header,
 }
 
 template <typename EDATA_T>
-ModuleDescriptor MutableCsr<EDATA_T>::Dump(Checkpoint& ckp) {
+void MutableCsr<EDATA_T>::Dump(Checkpoint& ckp, CheckpointManifest& meta,
+                               const std::string& key) {
   ModuleDescriptor descriptor;
   descriptor.module_type = ModuleTypeName();
   descriptor.set("unsorted_since", std::to_string(unsorted_since_));
@@ -156,32 +166,12 @@ ModuleDescriptor MutableCsr<EDATA_T>::Dump(Checkpoint& ckp) {
 
   descriptor.set_path(ModuleDescriptor::kCapacityListPath,
                       ckp.Commit(*cap_list_));
-  return descriptor;
-}
-
-template <typename EDATA_T>
-void MutableCsr<EDATA_T>::reset_timestamp() {
-  size_t vnum = vertex_capacity();
-  auto** buf_arr = reinterpret_cast<nbr_t**>(adj_list_buffer_->GetData());
-  auto* sz_arr = reinterpret_cast<std::atomic<int>*>(degree_list_->GetData());
-  for (size_t i = 0; i != vnum; ++i) {
-    nbr_t* nbrs = buf_arr[i];
-    if (nbrs == nullptr) {
-      continue;
-    }
-    size_t deg = sz_arr[i].load(std::memory_order_relaxed);
-    for (size_t j = 0; j != deg; ++j) {
-      if (nbrs[j].timestamp != INVALID_TIMESTAMP) {
-        nbrs[j].timestamp.store(0, std::memory_order_relaxed);
-      }
-    }
-  }
+  meta.set_module(key, descriptor);
 }
 
 template <typename EDATA_T>
 void MutableCsr<EDATA_T>::compact() {
-  // We don't shrink the capacity of each adjacency list, but just remove the
-  // deleted edges.
+  // Remove deleted edges and reset timestamps on surviving edges.
   size_t vnum = vertex_capacity();
   auto** buf_arr = reinterpret_cast<nbr_t**>(adj_list_buffer_->GetData());
   auto* sz_arr = reinterpret_cast<std::atomic<int>*>(degree_list_->GetData());
@@ -200,6 +190,7 @@ void MutableCsr<EDATA_T>::compact() {
         if (removed) {
           *write_ptr = *read_ptr;
         }
+        write_ptr->timestamp.store(0, std::memory_order_relaxed);
         ++write_ptr;
       } else {
         ++removed;
@@ -246,6 +237,7 @@ void MutableCsr<EDATA_T>::resize(vid_t vnum) {
     degree_list_->Resize(vnum * sizeof(int));
     cap_list_->Resize(vnum * sizeof(int));
   }
+  refresh_prefetch_policy();
 }
 
 template <typename EDATA_T>
@@ -335,6 +327,7 @@ void MutableCsr<EDATA_T>::batch_delete_vertices(
     sz_arr[src].store(cur_deg - removed, std::memory_order_relaxed);
   }
   unsorted_since_ = 0;
+  refresh_prefetch_policy();
 }
 
 template <typename EDATA_T>
@@ -368,6 +361,7 @@ void MutableCsr<EDATA_T>::batch_delete_edges(
     }
   }
   unsorted_since_ = 0;
+  refresh_prefetch_policy();
 }
 
 template <typename EDATA_T>
@@ -400,6 +394,7 @@ void MutableCsr<EDATA_T>::batch_delete_edges(
     }
   }
   unsorted_since_ = 0;
+  refresh_prefetch_policy();
 }
 
 template <typename EDATA_T>
@@ -528,6 +523,7 @@ void MutableCsr<EDATA_T>::batch_put_edges(const std::vector<vid_t>& src_list,
   if (ts < unsorted_since_) {
     unsorted_since_ = 0;
   }
+  refresh_prefetch_policy();
 }
 
 template <typename EDATA_T>
@@ -536,22 +532,32 @@ void SingleMutableCsr<EDATA_T>::Open(Checkpoint& ckp,
                                      MemoryLevel level) {
   assert(descriptor.module_type.empty() ||
          descriptor.module_type == ModuleTypeName());
-  nbr_list_ = ckp.OpenFile(
-      descriptor.get_path(ModuleDescriptor::kNbrListPath).value_or(""), level);
+  nbr_list_ = std::shared_ptr<IDataContainer>(ckp.OpenFile(
+      descriptor.get_path(ModuleDescriptor::kNbrListPath).value_or(""), level));
   edge_num_.store(std::stoull(descriptor.get("edge_num").value_or("0")));
+  refresh_prefetch_policy();
 }
 
 template <typename EDATA_T>
-ModuleDescriptor SingleMutableCsr<EDATA_T>::Dump(Checkpoint& ckp) {
+void SingleMutableCsr<EDATA_T>::refresh_prefetch_policy() {
+  prefetch_policy_.metadata_distance = 64;
+  prefetch_policy_.head_distance = 32;
+  prefetch_policy_.metadata_locality = 2;
+  prefetch_policy_.head_locality = 0;
+}
+
+template <typename EDATA_T>
+void SingleMutableCsr<EDATA_T>::Dump(Checkpoint& ckp, CheckpointManifest& meta,
+                                     const std::string& key) {
   ModuleDescriptor descriptor;
   descriptor.module_type = ModuleTypeName();
   descriptor.set_path(ModuleDescriptor::kNbrListPath, ckp.Commit(*nbr_list_));
   descriptor.set("edge_num", std::to_string(edge_num_.load()));
-  return descriptor;
+  meta.set_module(key, descriptor);
 }
 
 template <typename EDATA_T>
-void SingleMutableCsr<EDATA_T>::reset_timestamp() {
+void SingleMutableCsr<EDATA_T>::compact() {
   if (!nbr_list_) {
     return;
   }
@@ -563,9 +569,6 @@ void SingleMutableCsr<EDATA_T>::reset_timestamp() {
     }
   }
 }
-
-template <typename EDATA_T>
-void SingleMutableCsr<EDATA_T>::compact() {}
 
 template <typename EDATA_T>
 void SingleMutableCsr<EDATA_T>::resize(vid_t vnum) {

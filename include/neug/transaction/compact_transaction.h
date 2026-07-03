@@ -14,6 +14,7 @@
  */
 #pragma once
 
+#include "neug/storages/graph_snapshot_store.h"
 #include "neug/utils/property/types.h"
 #include "neug/utils/serialization/in_archive.h"
 
@@ -25,9 +26,8 @@ class IVersionManager;
 
 class CompactTransaction {
  public:
-  CompactTransaction(PropertyGraph& graph, IWalWriter& logger,
-                     IVersionManager& vm, bool compact_csr, float reserve_ratio,
-                     timestamp_t timestamp);
+  CompactTransaction(GraphSnapshotStore& snapshot_store, IWalWriter& logger,
+                     IVersionManager& vm, timestamp_t timestamp);
   ~CompactTransaction();
 
   timestamp_t timestamp() const;
@@ -37,11 +37,9 @@ class CompactTransaction {
   void Abort();
 
  private:
-  PropertyGraph& graph_;
+  SnapshotGuard guard_;
   IWalWriter& logger_;
   IVersionManager& vm_;
-  bool compact_csr_;
-  float reserve_ratio_;
   timestamp_t timestamp_;
 
   InArchive arc_;

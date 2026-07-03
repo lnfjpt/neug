@@ -28,6 +28,7 @@
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "neug/config.h"
@@ -40,7 +41,7 @@
 #include "neug/storages/module/module.h"
 #include "neug/storages/module/type_name.h"
 #include "neug/utils/exception/exception.h"
-#include "neug/utils/file_utils.h"
+#include "neug/utils/io/file/file_utils.h"
 #include "neug/utils/likely.h"
 #include "neug/utils/property/types.h"
 #include "neug/utils/serialization/out_archive.h"
@@ -84,18 +85,19 @@ class TypedColumn : public ColumnBase {
   void Open(Checkpoint& ckp, const ModuleDescriptor& desc,
             MemoryLevel level) override {
     assert(desc.module_type.empty() || desc.module_type == ModuleTypeName());
-    buffer_ = ckp.OpenFile(
-        desc.get_path(ModuleDescriptor::kDataPath).value_or(""), level);
+    buffer_ = std::shared_ptr<IDataContainer>(ckp.OpenFile(
+        desc.get_path(ModuleDescriptor::kDataPath).value_or(""), level));
     size_ = buffer_->GetDataSize() / sizeof(T);
   }
 
   void Close() { buffer_.reset(); }
 
-  ModuleDescriptor Dump(Checkpoint& ckp) override {
+  void Dump(Checkpoint& ckp, CheckpointManifest& meta,
+            const std::string& key) override {
     ModuleDescriptor desc;
     desc.set_path(ModuleDescriptor::kDataPath, ckp.Commit(*buffer_));
     desc.module_type = ModuleTypeName();
-    return desc;
+    meta.set_module(key, std::move(desc));
   }
 
   size_t size() const override { return size_; }
@@ -134,6 +136,10 @@ class TypedColumn : public ColumnBase {
 
   void set_any(size_t index, const execution::Value& value,
                bool insert_safe) override {
+    if (value.IsNull()) {
+      set_value(index, T());
+      return;
+    }
     // allow resize is ignored for fixed-length types
     set_value(index, value.GetValue<T>());
   }
@@ -161,6 +167,17 @@ class TypedColumn : public ColumnBase {
     return reinterpret_cast<const T*>(buffer_->GetData());
   }
 
+  std::unique_ptr<Module> Clone() const override {
+    auto new_col = std::make_unique<TypedColumn<T>>();
+    new_col->buffer_ = buffer_;
+    new_col->size_ = size_;
+    return new_col;
+  }
+
+  void Detach(Checkpoint& ckp, MemoryLevel level) override {
+    buffer_ = buffer_->Fork(ckp, level);
+  }
+
   std::string ModuleTypeName() const override { return type_name(); }
 
   static std::string type_name() {
@@ -168,7 +185,7 @@ class TypedColumn : public ColumnBase {
   }
 
  private:
-  std::unique_ptr<IDataContainer> buffer_;
+  std::shared_ptr<IDataContainer> buffer_;
   size_t size_;
 };
 
@@ -194,7 +211,12 @@ class TypedColumn<EmptyType> : public ColumnBase {
   void Open(Checkpoint& ckp, const ModuleDescriptor& desc,
             MemoryLevel level) override {}
 
-  ModuleDescriptor Dump(Checkpoint& ckp) override { return ModuleDescriptor(); }
+  void Dump(Checkpoint&, CheckpointManifest& meta,
+            const std::string& key) override {
+    ModuleDescriptor desc;
+    desc.module_type = ModuleTypeName();
+    meta.set_module(key, std::move(desc));
+  }
   size_t size() const override { return 0; }
   void resize(size_t size) override {}
   void resize(size_t size, const execution::Value& default_value) override {}
@@ -217,6 +239,13 @@ class TypedColumn<EmptyType> : public ColumnBase {
   std::string ModuleTypeName() const override { return type_name(); }
 
   static std::string type_name() { return "column<empty>"; }
+
+  std::unique_ptr<Module> Clone() const override {
+    return std::make_unique<TypedColumn<EmptyType>>();
+  }
+
+  // DeepCopy: no-op for EmptyType (no IDataContainer)
+  void Detach(Checkpoint&, MemoryLevel) override {}
 };
 
 struct string_item {
@@ -242,10 +271,10 @@ class TypedColumn<std::string_view> : public ColumnBase {
 
   void Open(Checkpoint& ckp, const ModuleDescriptor& desc,
             MemoryLevel level) override {
-    items_buffer_ = ckp.OpenFile(
-        desc.get_path(ModuleDescriptor::kItemsPath).value_or(""), level);
-    data_buffer_ = ckp.OpenFile(
-        desc.get_path(ModuleDescriptor::kDataPath).value_or(""), level);
+    items_buffer_ = std::shared_ptr<IDataContainer>(ckp.OpenFile(
+        desc.get_path(ModuleDescriptor::kItemsPath).value_or(""), level));
+    data_buffer_ = std::shared_ptr<IDataContainer>(ckp.OpenFile(
+        desc.get_path(ModuleDescriptor::kDataPath).value_or(""), level));
     size_ = items_buffer_->GetDataSize() / sizeof(string_item);
     pos_.store(std::stoull(desc.get("pos").value_or("0")));
     assert(pos_.load() <= data_buffer_->GetDataSize());
@@ -273,7 +302,8 @@ class TypedColumn<std::string_view> : public ColumnBase {
     }
   }
 
-  ModuleDescriptor Dump(Checkpoint& ckp) override {
+  void Dump(Checkpoint& ckp, CheckpointManifest& meta,
+            const std::string& key) override {
     ModuleDescriptor desc;
     desc.module_type = ModuleTypeName();
     if (!items_buffer_ || !data_buffer_) {
@@ -287,7 +317,8 @@ class TypedColumn<std::string_view> : public ColumnBase {
                     ckp.LinkToSnapshot(items_buffer_->GetPath()));
       desc.set_path(ModuleDescriptor::kDataPath,
                     ckp.LinkToSnapshot(data_buffer_->GetPath()));
-      return desc;
+      meta.set_module(key, std::move(desc));
+      return;
     }
     auto data_uuid = ckp.CreateRuntimeObject();
     auto data_file = ckp.runtime_dir() + "/" + data_uuid;
@@ -371,7 +402,7 @@ class TypedColumn<std::string_view> : public ColumnBase {
                   ckp.CommitRuntimeObject(item_uuid));
     desc.set_path(ModuleDescriptor::kDataPath,
                   ckp.CommitRuntimeObject(data_uuid));
-    return desc;
+    meta.set_module(key, std::move(desc));
   }
 
   size_t size() const override { return size_; }
@@ -447,6 +478,10 @@ class TypedColumn<std::string_view> : public ColumnBase {
     if (idx >= size_) {
       THROW_RUNTIME_ERROR("Index out of range");
     }
+    if (value.IsNull()) {
+      set_value(idx, std::string_view());
+      return;
+    }
     auto dst_value = value.GetValue<std::string>();
     if (pos_.load() + dst_value.size() > data_buffer_->GetDataSize()) {
       if (insert_safe) {
@@ -482,6 +517,21 @@ class TypedColumn<std::string_view> : public ColumnBase {
     std::string_view val;
     arc >> val;
     set_value(index, val);
+  }
+
+  std::unique_ptr<Module> Clone() const override {
+    auto new_col = std::make_unique<TypedColumn<std::string_view>>(width_);
+    new_col->items_buffer_ = items_buffer_;
+    new_col->data_buffer_ = data_buffer_;
+    new_col->size_ = size_;
+    new_col->pos_ = pos_.load();
+    return new_col;
+  }
+
+  // DeepCopy:
+  void Detach(Checkpoint& ckp, MemoryLevel level) override {
+    items_buffer_ = items_buffer_->Fork(ckp, level);
+    data_buffer_ = data_buffer_->Fork(ckp, level);
   }
 
   size_t available_space() const {
@@ -527,8 +577,8 @@ class TypedColumn<std::string_view> : public ColumnBase {
                : 0;
   }
 
-  std::unique_ptr<IDataContainer> items_buffer_;
-  std::unique_ptr<IDataContainer> data_buffer_;
+  std::shared_ptr<IDataContainer> items_buffer_;
+  std::shared_ptr<IDataContainer> data_buffer_;
   size_t size_;
   std::atomic<size_t> pos_;
   uint16_t width_;
@@ -538,7 +588,6 @@ using StringColumn = TypedColumn<std::string_view>;
 
 std::unique_ptr<ColumnBase> CreateColumn(DataType type);
 
-/// Create RefColumn for ease of usage for hqps
 class RefColumnBase {
  public:
   enum class ColType {

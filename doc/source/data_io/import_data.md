@@ -2,11 +2,15 @@
 
 `COPY FROM` persists external data into NeuG's graph storage. It builds on top of [`LOAD FROM`](load_data) — internally, `COPY FROM` uses `LOAD FROM` to read and parse external files, then writes the result into node or relationship tables.
 
+A variant — **`COPY TEMP`** — imports external data as a **temporary graph** whose lifetime is bound to the current connection. Temporary tables are automatically removed when the connection closes, making `COPY TEMP` ideal for ad-hoc analytics without polluting the persistent schema.
+
 ## Schema Requirement
 
 You can create a **predefined schema** — that is, define node/relationship tables before importing data — where the columns in the external file must match the table properties.
 
 Since v0.1.2, NeuG supports schema-flexible persistent import — allowing `COPY FROM` to leverage the capability of type inference of `LOAD FROM`, without requiring a predefined schema. This will make it much easier to quickly onboard new datasets. See [Import without a predefined schema](#import-without-a-predefined-schema) for more usages.
+
+> **COPY TEMP** always infers the schema automatically. The first column becomes the primary key for nodes; for relationships, the first two columns are source/destination keys.
 
 ---
 
@@ -17,6 +21,7 @@ Here is a complete example of importing a social network dataset from CSV.
 ### Step 1: Prepare Data Files
 
 **users.csv:**
+
 ```csv
 id,name,age,email
 1,Alice Johnson,30,alice@example.com
@@ -25,6 +30,7 @@ id,name,age,email
 ```
 
 **friendships.csv:**
+
 ```csv
 from_user_id,to_user_id,since_year
 1,2,2020
@@ -33,6 +39,7 @@ from_user_id,to_user_id,since_year
 ```
 
 ### Step 2: Create Schema
+
 ```cypher
 CREATE NODE TABLE User(
     id INT64 PRIMARY KEY,
@@ -48,11 +55,12 @@ CREATE REL TABLE FRIENDS(
 ```
 
 ### Step 3: Import Data
+
 ```cypher
--- Import nodes first (order matters — nodes must exist before relationships)
+// Import nodes first (order matters — nodes must exist before relationships)
 COPY User FROM "users.csv" (header=true, delimiter=",");
 
--- Then import relationships
+// Then import relationships
 COPY FRIENDS FROM "friendships.csv" (
     from="User",
     to="User",
@@ -62,12 +70,39 @@ COPY FRIENDS FROM "friendships.csv" (
 ```
 
 ### Step 4: Verify
+
 ```cypher
 MATCH (u:User) RETURN count(u) AS user_count;
 
 MATCH (u1:User)-[f:FRIENDS]->(u2:User)
 RETURN u1.name, u2.name, f.since_year
 LIMIT 5;
+```
+
+### Temporary Graph
+
+To import the same data as a **temporary** graph (no DDL, no persistence):
+
+```cypher
+// Temporary node table (auto-inferred schema, first column = primary key)
+COPY TEMP TempUser FROM "users.csv" (header=true, delimiter=",");
+
+// Temporary relationship table (from/to specify endpoint labels)
+COPY TEMP TEMP_FRIENDS FROM "friendships.csv" (
+  header=true,
+  delimiter=",",
+  from='TempUser',
+  to='TempUser'
+);
+
+// Query works the same way
+MATCH (u1:TempUser)-[f:TEMP_FRIENDS]->(u2:TempUser)
+RETURN u1.name, u2.name, f.since_year;
+
+// Temporary tables are automatically dropped when the connection closes.
+// Or manually drop before that:
+DROP TABLE TEMP_FRIENDS;
+DROP TABLE TempUser;
 ```
 
 ---
@@ -77,42 +112,74 @@ LIMIT 5;
 Create a node table and import data:
 
 ```cypher
-CREATE NODE TABLE person(id INT64, name STRING, age INT64, PRIMARY KEY(id));
+CREATE NODE TABLE Person(id INT64, name STRING, age INT64, PRIMARY KEY(id));
 ```
 
 ```cypher
-COPY person FROM "person.csv" (header=true);
+COPY Person FROM "person.csv" (header=true);
 ```
 
 If data is spread across multiple files, use wildcard characters:
 
 ```cypher
-COPY person FROM "person*.csv" (header=true);
+COPY Person FROM "person*.csv" (header=true);
 ```
 
 > **Note:** The number and order of columns in the CSV file must match the properties defined in the node table exactly.
+
+**Temporary node table** — no DDL needed, schema is auto-inferred:
+
+```cypher
+COPY TEMP TempPerson FROM "person.csv" (header=true);
+
+// With filter/projection via LOAD FROM subquery:
+COPY TEMP TempAdults FROM (
+    LOAD FROM "person.csv" (header=true)
+    WHERE age >= 18
+    RETURN id, name
+);
+```
 
 ## Import into Relationship Table
 
 Create a relationship table and import data:
 
 ```cypher
-CREATE REL TABLE knows(FROM person TO person, weight DOUBLE);
+CREATE REL TABLE KNOWS(FROM Person TO Person, weight DOUBLE);
 ```
 
 ```cypher
-COPY knows FROM "person_knows_person.csv" (from="person", to="person", header=true);
+COPY KNOWS FROM "person_knows_person.csv" (from="Person", to="Person", header=true);
 ```
 
 > **Note:** NeuG assumes the first two columns are the primary keys of the `FROM` and `TO` nodes. The remaining columns correspond to relationship properties. The `from` and `to` parameters must be specified to identify the endpoint node tables.
+
+**Temporary relationship table:**
+
+```cypher
+// Simple: first two columns are src/dst keys
+COPY TEMP TEMP_KNOWS FROM "edges.csv" (
+    header=true,
+    from='Person',
+    to='Person'
+);
+
+// With column reordering (when keys are NOT at positions [0/1]):
+COPY TEMP TEMP_KNOWS FROM (
+    LOAD FROM "edges_shuffled.csv" (header=true)
+    RETURN src_id, dst_id, weight
+) (from='Person', to='Person');
+```
+
+> **Note:** `from`/`to` must reference existing vertex labels — either persistent tables or previously created temporary labels.
 
 ## Import without a predefined schema
 
 When **`auto_detect`** is enabled (the default), a `COPY ... FROM` into a **new** label skips manual `CREATE NODE TABLE` / `CREATE REL TABLE` for that label. The compiler builds a plan that applies DDL for the inferred type, then runs the same bulk insert path as a normal `COPY`.
 
-| Option        | Type | Default | Description                                                                                                                                       |
-| ------------- | ---- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `auto_detect` | bool | `true`  | If the target table does not exist, infer schema from the scan/sniff result and create it before insert. If `false`, a missing table is an error. |
+| Option          | Type | Default  | Description                                                                                                                                         |
+| --------------- | ---- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `auto_detect` | bool | `true` | If the target table does not exist, infer schema from the scan/sniff result and create it before insert. If `false`, a missing table is an error. |
 
 You can set it explicitly when needed:
 
@@ -121,12 +188,16 @@ COPY User FROM "users.csv" (header=true, auto_detect=true);
 COPY User FROM "users.csv" (header=true, auto_detect=false);  -- require table to exist
 ```
 
+> **Note:**
+> 1. For CSV format, if the CSV has no header row, property names default to the auto-generated column names from the file reader (e.g., `f0`, `f1`, `f2`, ...).
+> 2. **COPY TEMP** always operates in auto-detect mode — it always infers schema and creates a temporary table, so the `auto_detect` option is irrelevant for `COPY TEMP`.
+
 ### Nodes (new label)
 
 ```cypher
-// File has header: id,name,age 
+// File has header: id,name,age
 // id becomes PRIMARY KEY
-COPY person FROM "person.csv" (header=true);
+COPY Person FROM "person.csv" (header=true);
 ```
 
 - The **first column** of the source is used as the **primary key** property, If the file column order is wrong for inference, reorder with a `LOAD FROM` subquery (first returned column = primary key), see [Column remapping with load from](#column-remapping-with-load-from) for reference.
@@ -140,9 +211,9 @@ COPY person FROM "person.csv" (header=true);
 // src becomes source column
 // dst becomes destination column
 // other columns are edge properties
-COPY knows FROM "person_knows_person.csv" (
-    from="person",
-    to="person",
+COPY KNOWS FROM "person_knows_person.csv" (
+    from="Person",
+    to="Person",
     header=true,
     delimiter=","
 );
@@ -160,14 +231,16 @@ In addition to CSV, the same schema-flexible import with automatic type inferenc
 
 The following options control how CSV files are parsed during `COPY FROM`. These are the same options supported by [`LOAD FROM`](load_data#csv):
 
-| Option     | Type | Default | Description |
-| ---------- | ---- | ------- | ----------- |
-| `delim`    | char | `\|`    | Field delimiter |
-| `header`   | bool | `true`  | Whether the first row contains column names |
-| `quote`    | char | `"`     | Quote character |
-| `escape`   | char | `\`     | Escape character |
-| `quoting`  | bool | `true`  | Whether to enable quote processing |
-| `escaping` | bool | `true`  | Whether to enable escape character processing |
+| Option       | Type | Default  | Description                                   |
+| ------------ | ---- | -------- | --------------------------------------------- |
+| `delim`    | char | `\|`    | Field delimiter                               |
+| `header`   | bool | `true` | Whether the first row contains column names   |
+| `quote`    | char | `"`    | Quote character                               |
+| `escape`   | char | `\`    | Escape character                              |
+| `quoting`  | bool | `true` | Whether to enable quote processing            |
+| `escaping` | bool | `true` | Whether to enable escape character processing |
+
+> **Array limitation:** `COPY FROM` CSV currently does not auto-detect or directly materialize fixed-size `ARRAY` columns from bracketed CSV fields such as `"[1,2,3]"`. Use Cypher literals/parameters for array properties, or a typed non-CSV ingestion path when available.
 
 ### JSON/JSONL
 
@@ -176,10 +249,10 @@ Since NeuG v0.1.2, JSON/JSONL is a built-in feature. You can use `COPY FROM` to 
 ```cypher
 // JSON array file — schema auto-detected,
 // first column becomes primary key
-COPY person FROM "person.json";
+COPY Person FROM "person.json";
 
 // JSONL file — same auto-detection
-COPY person FROM "person.jsonl";
+COPY Person FROM "person.jsonl";
 ```
 
 > **Version Note:** Since version v0.1.2, we made JSON support a built-in functionality, so you do not need to install the JSON extension before using it. For NeuG version < 0.1.2, JSON support was provided via the [JSON Extension](../extensions/load_json) and required `INSTALL json; LOAD json;` before use.
@@ -196,7 +269,7 @@ LOAD parquet;
 ```cypher
 // Schema auto-detected from Parquet metadata
 // first column becomes primary key
-COPY person FROM "person.parquet";
+COPY Person FROM "person.parquet";
 ```
 
 ## Column Remapping with LOAD FROM
@@ -208,6 +281,7 @@ Since `COPY FROM` builds on `LOAD FROM`, you can use a `LOAD FROM` subquery to *
 When the file columns are in a different order from the table schema:
 
 **person_remap.csv:**
+
 ```
 age,name,id
 39,marko,1
@@ -217,7 +291,7 @@ age,name,id
 ```
 
 ```cypher
-COPY person FROM (
+COPY Person FROM (
     LOAD FROM "person_remap.csv"
     RETURN id, name, age
 );
@@ -226,6 +300,7 @@ COPY person FROM (
 ### Remapping Relationship Endpoints
 
 **knows_remap.csv:**
+
 ```
 dst_name,src_name,weight
 josh,marko,1.0
@@ -234,7 +309,7 @@ peter,josh,0.8
 ```
 
 ```cypher
-COPY knows FROM (
+COPY KNOWS FROM (
     LOAD FROM "knows_remap.csv"
     RETURN src_name AS src, dst_name AS dst, weight
 );
@@ -245,7 +320,7 @@ COPY knows FROM (
 You can filter rows before persisting, avoiding the need to clean the source file:
 
 ```cypher
-COPY person FROM (
+COPY Person FROM (
     LOAD FROM "person.csv" (delim=',')
     WHERE age >= 18
     RETURN *
@@ -258,11 +333,11 @@ For the full set of relational operations available in `LOAD FROM` subqueries, s
 
 ## Performance Options
 
-| Option       | Type  | Default        | Description |
-| ------------ | ----- | -------------- | ----------- |
-| `batch_read` | bool  | `false`        | Read data incrementally in batches. |
-| `batch_size` | int64 | `1048576` (1MB) | Batch size in bytes when `batch_read` is enabled. |
-| `parallel`   | bool  | `false`        | Enable parallel reading using multiple threads (max core number). |
+| Option         | Type  | Default           | Description                                                       |
+| -------------- | ----- | ----------------- | ----------------------------------------------------------------- |
+| `batch_read` | bool  | `false`         | Read data incrementally in batches.                               |
+| `batch_size` | int64 | `1048576` (1MB) | Batch size in bytes when `batch_read` is enabled.               |
+| `parallel`   | bool  | `false`         | Enable parallel reading using multiple threads (max core number). |
 
 ```cypher
 COPY User FROM "large_users.csv" (header=true, parallel=true);

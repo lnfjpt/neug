@@ -29,6 +29,7 @@
 
 #include "neug/execution/common/types/value.h"
 #include "neug/storages/allocators.h"
+#include "neug/storages/checkpoint.h"
 #include "neug/storages/checkpoint_manager.h"
 #include "neug/storages/csr/csr_view.h"
 #include "neug/storages/graph/edge_table.h"
@@ -127,7 +128,7 @@ class PropertyGraph {
    */
   void Open(std::shared_ptr<Checkpoint> ckp, MemoryLevel memory_level);
 
-  void Compact(bool compact_csr, float reserve_ratio, timestamp_t ts);
+  void Compact(timestamp_t ts);
 
   /**
    * @brief Dump the current graph state to persistent storage.
@@ -304,10 +305,10 @@ class PropertyGraph {
                         size_t capacity);
 
   Status BatchAddVertices(label_t v_label_id,
-                          std::shared_ptr<IRecordBatchSupplier> supplier);
+                          std::shared_ptr<IDataChunkSupplier> supplier);
 
   Status BatchAddEdges(label_t src_label, label_t dst_label, label_t edge_label,
-                       std::shared_ptr<IRecordBatchSupplier> supplier);
+                       std::shared_ptr<IDataChunkSupplier> supplier);
 
   Status BatchDeleteVertices(label_t v_label_id,
                              const std::vector<vid_t>& vids);
@@ -322,7 +323,6 @@ class PropertyGraph {
    */
   Status DeleteVertex(label_t v_label, const execution::Value& oid,
                       timestamp_t ts);
-
   Status DeleteVertex(label_t v_label, vid_t lid, timestamp_t ts);
 
   Status DeleteEdge(label_t src_label, vid_t src_lid, label_t dst_label,
@@ -367,6 +367,14 @@ class PropertyGraph {
       THROW_INVALID_ARGUMENT_EXCEPTION(
           "Edge table for edge label triplet not found");
     }
+    return edge_tables_.at(index);
+  }
+
+  inline bool HasEdgeTable(uint32_t index) const {
+    return edge_tables_.count(index) != 0;
+  }
+
+  inline EdgeTable& get_edge_table_by_index(uint32_t index) {
     return edge_tables_.at(index);
   }
 
@@ -594,6 +602,8 @@ class PropertyGraph {
 
   inline std::string work_dir() const { return ckp_->path(); }
 
+  std::shared_ptr<PropertyGraph> Clone() const;
+
  private:
   Status delete_vertex_properties_check(const std::string& vertex_type_name,
                                         const std::vector<std::string>& props,
@@ -623,6 +633,8 @@ class PropertyGraph {
 
   size_t vertex_label_total_count_, edge_label_total_count_;
   MemoryLevel memory_level_;
+
+  friend class GraphView;
 };
 
 }  // namespace neug

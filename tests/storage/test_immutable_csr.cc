@@ -267,20 +267,18 @@ TYPED_TEST(IMMutableCsrTest, TestBasicFunction) {
   EXPECT_EQ(immutable_csr.size(), 500);
   EXPECT_EQ(immutable_csr.edge_num(), 10000);
   immutable_csr.compact();
-  immutable_csr.reset_timestamp();
 
   SingleImmutableCsr<TypeParam> single_immutable_csr;
   this->load_single_csr_data(single_immutable_csr);
   EXPECT_EQ(single_immutable_csr.size(), 500);
   EXPECT_EQ(single_immutable_csr.edge_num(), 500);
   single_immutable_csr.compact();
-  single_immutable_csr.reset_timestamp();
 }
 
 TYPED_TEST(IMMutableCsrTest, TestDumpAndOpen) {
   ImmutableCsr<TypeParam> immutable_csr;
   auto ckp = this->load_csr_data(immutable_csr);
-  auto desc = immutable_csr.Dump(*ckp);
+  auto desc = dump_module_descriptor(immutable_csr, *ckp, "immutable_csr");
 
   ImmutableCsr<TypeParam> fmap_immutable_csr, memory_immutable_csr,
       hugepage_immutable_csr;
@@ -293,7 +291,8 @@ TYPED_TEST(IMMutableCsrTest, TestDumpAndOpen) {
 
   SingleImmutableCsr<TypeParam> single_immutable_csr;
   auto single_ckp = this->load_single_csr_data(single_immutable_csr);
-  auto single_desc = single_immutable_csr.Dump(*single_ckp);
+  auto single_desc = dump_module_descriptor(single_immutable_csr, *single_ckp,
+                                            "single_immutable_csr");
 
   SingleImmutableCsr<TypeParam> fmap_single_immutable_csr,
       memory_single_immutable_csr, hugepage_single_immutable_csr;

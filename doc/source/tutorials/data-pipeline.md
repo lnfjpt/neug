@@ -1,6 +1,6 @@
 # Data Pipeline Tutorial: Cloud Storage → Graph Query → Parquet Export
 
-This tutorial walks you through a complete data pipeline using NeuG v0.1.2:
+This tutorial walks you through a complete data pipeline using NeuG (version >= v0.1.2):
 
 1. Read Parquet files directly from cloud storage (no download)
 2. Auto-create graph tables without writing DDL
@@ -8,7 +8,7 @@ This tutorial walks you through a complete data pipeline using NeuG v0.1.2:
 4. Export results back to Parquet (local or cloud)
 
 **Time**: ~10 minutes
-**Prerequisites**: `pip install neug==0.1.2`, internet access
+**Prerequisites**: `pip install neug==0.1.3`, internet access
 
 ---
 
@@ -74,11 +74,13 @@ result = conn.execute('''
 
 ## Step 3: Import Nodes — One Line, No DDL
 
-Traditionally, importing data into a graph database requires you to first define the schema (column names, types, primary key) with a `CREATE NODE TABLE` statement. In NeuG v0.1.2, you can skip all of that:
+> **Note:** `COPY FROM` is only supported in [embedded mode](../data_io/index.md#embedded-mode-only), not in service mode.
+
+Traditionally, importing data into a graph database requires you to first define the schema (column names, types, primary key) with a `CREATE NODE TABLE` statement. In NeuG v0.1.3, you can skip all of that:
 
 ```python
 conn.execute('''
-    COPY person FROM (
+    COPY Person FROM (
         LOAD FROM "https://graphscope.oss-cn-beijing.aliyuncs.com/neug/vPerson.parquet"
         RETURN *
     )
@@ -94,7 +96,7 @@ NeuG automatically:
 Verify:
 
 ```python
-result = conn.execute("MATCH (p:person) RETURN count(p)")
+result = conn.execute("MATCH (p:Person) RETURN count(p)")
 print(list(result))  # [[8]]
 ```
 
@@ -108,17 +110,17 @@ Edge tables work the same way, with one addition — you need to specify which n
 
 ```python
 conn.execute('''
-    COPY meets FROM (
+    COPY MEETS FROM (
         LOAD FROM "https://graphscope.oss-cn-beijing.aliyuncs.com/neug/eMeets.parquet"
         RETURN *
-    ) (from="person", to="person")
+    ) (from="Person", to="Person")
 ''')
 ```
 
 Verify:
 
 ```python
-result = conn.execute("MATCH ()-[e:meets]->() RETURN count(e)")
+result = conn.execute("MATCH ()-[e:MEETS]->() RETURN count(e)")
 print(list(result))  # [[7]]
 ```
 
@@ -130,7 +132,7 @@ Now you have a graph. Query it:
 
 ```python
 result = conn.execute('''
-    MATCH (a:person)-[m:meets]->(b:person)
+    MATCH (a:Person)-[m:MEETS]->(b:Person)
     WHERE a.age > 30
     RETURN a.fName, b.fName, m.location
 ''')
@@ -147,7 +149,7 @@ Export filtered graph query results:
 ```python
 conn.execute('''
     COPY (
-        MATCH (a:person)-[m:meets]->(b:person)
+        MATCH (a:Person)-[m:MEETS]->(b:Person)
         WHERE a.age < 35
         RETURN a.fName AS name, a.age AS age, b.fName AS met_person, m.location
     ) TO '/tmp/young_social.parquet'
@@ -163,7 +165,7 @@ In production, you can write directly to OSS or S3 — no local disk involved:
 ```python
 conn.execute('''
     COPY (
-        MATCH (a:person)-[m:meets]->(b:person)
+        MATCH (a:Person)-[m:MEETS]->(b:Person)
         WHERE a.age < 35
         RETURN a.fName AS name, a.age AS age, b.fName AS met_person, m.location
     ) TO "oss://my-bucket/output/young_social.parquet" (
@@ -183,7 +185,7 @@ If you want to continue analysis in Python (pandas, polars, DuckDB), convert que
 
 ```python
 result = conn.execute('''
-    MATCH (p:person)
+    MATCH (p:Person)
     RETURN p.ID, p.fName, p.age
     ORDER BY p.ID
 ''')
@@ -278,7 +280,7 @@ print("Preview:", list(result))
 
 # Import nodes (no DDL)
 conn.execute('''
-    COPY person FROM (
+    COPY Person FROM (
         LOAD FROM "https://graphscope.oss-cn-beijing.aliyuncs.com/neug/vPerson.parquet"
         RETURN *
     )
@@ -286,15 +288,15 @@ conn.execute('''
 
 # Import edges (no DDL)
 conn.execute('''
-    COPY meets FROM (
+    COPY MEETS FROM (
         LOAD FROM "https://graphscope.oss-cn-beijing.aliyuncs.com/neug/eMeets.parquet"
         RETURN *
-    ) (from="person", to="person")
+    ) (from="Person", to="Person")
 ''')
 
 # Query
 result = conn.execute('''
-    MATCH (a:person)-[m:meets]->(b:person)
+    MATCH (a:Person)-[m:MEETS]->(b:Person)
     WHERE a.age > 30
     RETURN a.fName, b.fName, m.location
 ''')
@@ -304,7 +306,7 @@ print("Query results:", list(result))
 out = os.path.join(tempfile.mkdtemp(), "young_social.parquet")
 conn.execute(f'''
     COPY (
-        MATCH (a:person)-[m:meets]->(b:person)
+        MATCH (a:Person)-[m:MEETS]->(b:Person)
         WHERE a.age < 35
         RETURN a.fName AS name, a.age AS age, b.fName AS met_person, m.location
     ) TO '{out}'
@@ -312,7 +314,7 @@ conn.execute(f'''
 print(f"Exported to: {out} ({os.path.getsize(out)} bytes)")
 
 # to_arrow()
-result = conn.execute("MATCH (p:person) RETURN p.ID, p.fName, p.age ORDER BY p.ID")
+result = conn.execute("MATCH (p:Person) RETURN p.ID, p.fName, p.age ORDER BY p.ID")
 table = result.to_arrow()
 print(f"Arrow table: {table.num_rows} rows, columns: {table.column_names}")
 

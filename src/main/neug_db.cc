@@ -41,7 +41,7 @@
 #include "neug/transaction/compact_transaction.h"
 #include "neug/transaction/wal/wal.h"
 #include "neug/utils/exception/exception.h"
-#include "neug/utils/file_utils.h"
+#include "neug/utils/io/file/file_utils.h"
 #include "neug/utils/result.h"
 
 namespace neug {
@@ -61,9 +61,14 @@ static void IngestWalRange(PropertyGraph& graph,
   if (from >= to) {
     return;
   }
+  // Build a single writable GraphView covering the whole replay range.
+  // read_ts = MAX_TIMESTAMP so vertices inserted earlier in the loop are
+  // visible to later edge-resolution lookups regardless of the per-unit
+  // commit timestamp.
+  GraphView view(graph);
   for (size_t j = from; j < to; ++j) {
     const auto& unit = parser.get_insert_wal(j);
-    InsertTransaction::IngestWal(graph, j, unit.ptr, unit.size, *allocators[0]);
+    InsertTransaction::IngestWal(view, j, unit.ptr, unit.size, *allocators[0]);
     if (j % 1000000 == 0) {
       LOG(INFO) << "Ingested " << j << " WALs";
     }
@@ -75,7 +80,7 @@ NeugDB::NeugDB()
       last_ts_(0),
       closed_(true),
       is_pure_memory_(false),
-      thread_num_(1) {}
+      max_thread_num_(1) {}
 
 NeugDB::~NeugDB() {
   Close();
@@ -88,7 +93,7 @@ NeugDB::~NeugDB() {
   try {
     if (is_pure_memory_) {
       VLOG(10) << "Removing temp NeugDB at: " << work_dir();
-      remove_directory(ws_.db_dir());
+      remove_directory(checkpoint_mgr_.db_dir());
     }
   } catch (const std::exception& e) {
     LOG(WARNING) << "Failed to remove temp dir for " << work_dir() << ": "
@@ -98,16 +103,13 @@ NeugDB::~NeugDB() {
   }
 }
 
-bool NeugDB::Open(const std::string& data_dir, int32_t max_num_threads,
+bool NeugDB::Open(const std::string& data_dir, int32_t max_thread_num,
                   const DBMode mode, const std::string& planner_kind,
-                  bool enable_auto_compaction, bool compact_csr,
-                  bool compact_on_close, bool checkpoint_on_close) {
-  NeugDBConfig config(data_dir, max_num_threads);
+                  bool enable_auto_compaction, bool checkpoint_on_close) {
+  NeugDBConfig config(data_dir, max_thread_num);
   config.mode = mode;
   config.planner_kind = planner_kind;
   config.enable_auto_compaction = enable_auto_compaction;
-  config.compact_csr = compact_csr;
-  config.compact_on_close = compact_on_close;
   config.checkpoint_on_close = checkpoint_on_close;
   return Open(config);
 }
@@ -115,14 +117,15 @@ bool NeugDB::Open(const std::string& data_dir, int32_t max_num_threads,
 bool NeugDB::Open(const NeugDBConfig& config) {
   config_ = config;
   preprocessConfig();
-  ws_.Open(config_.data_dir);
-  VLOG(1) << "Opening NeuGDB at " << ws_.db_dir();
-  file_lock_ = std::make_unique<FileLock>(ws_.db_dir());
+  checkpoint_mgr_.Open(config_.data_dir);
+  VLOG(1) << "Opening NeuGDB at " << checkpoint_mgr_.db_dir();
+  file_lock_ = std::make_unique<FileLock>(checkpoint_mgr_.db_dir());
 
   std::string error_msg;
   if (!file_lock_->lock(error_msg, config.mode)) {
-    THROW_DATABASE_LOCKED_EXCEPTION("Failed to lock data directory: " +
-                                    ws_.db_dir() + ", error: " + error_msg);
+    THROW_DATABASE_LOCKED_EXCEPTION(
+        "Failed to lock data directory: " + checkpoint_mgr_.db_dir() +
+        ", error: " + error_msg);
   }
   neug::execution::PlanParser::get().init();
   openGraphAndIngestWals();
@@ -130,9 +133,10 @@ bool NeugDB::Open(const NeugDBConfig& config) {
 
   LOG(INFO) << "NeugDB opened successfully";
   closed_.store(false);
-  if (last_ts_ > 0 && config.checkpoint_after_recovery) {
+  if (last_ts_ > 0 && config.checkpoint_on_recovery &&
+      config_.mode == DBMode::READ_WRITE) {
     LOG(INFO) << "Creating checkpoint after recovery at ts " << last_ts_;
-    createCheckpoint(true);
+    createCheckpoint();
   }
   return true;
 }
@@ -156,13 +160,14 @@ void NeugDB::Close() {
   if (config_.checkpoint_on_close && config_.mode == DBMode::READ_WRITE) {
     VLOG(1) << "Creating checkpoint on close...";
     try {
-      createCheckpoint(false, false);
+      createCheckpoint(false);
     } catch (const std::exception& e) {
       LOG(ERROR) << "Checkpoint on close failed: " << e.what();
     }
   }
 
-  graph_.Clear();
+  // Clear GraphSnapshotStore instead of graph_
+  snapshot_store_.reset();
 
   if (file_lock_) {
     file_lock_->unlock();
@@ -181,8 +186,17 @@ void NeugDB::RemoveConnection(std::shared_ptr<Connection> conn) {
 void NeugDB::CloseAllConnection() { connection_manager_->Close(); }
 
 void NeugDB::preprocessConfig() {
-  if (config_.thread_num == 0) {
-    config_.thread_num = std::thread::hardware_concurrency();
+  if (config_.max_thread_num < 0) {
+    THROW_INVALID_ARGUMENT_EXCEPTION(
+        "Invalid max_thread_num: " + std::to_string(config_.max_thread_num) +
+        ". Must be a non-negative integer.");
+  }
+  if (config_.max_thread_num == 0) {
+    config_.max_thread_num =
+        static_cast<int>(std::thread::hardware_concurrency());
+    if (config_.max_thread_num == 0) {
+      config_.max_thread_num = 1;
+    }
   }
   auto db_dir = config_.data_dir;
   if (db_dir.empty() || db_dir == ":memory" || db_dir == ":memory:") {
@@ -215,8 +229,8 @@ void NeugDB::initAllocators(const std::string& allocator_dir) {
   // Initialize the default allocator for ingesting wals
   remove_directory(allocator_dir);
   std::filesystem::create_directories(allocator_dir);
-  assert(config_.thread_num > 0);
-  for (int i = 0; i < config_.thread_num; ++i) {
+  assert(config_.max_thread_num > 0);
+  for (int i = 0; i < config_.max_thread_num; ++i) {
     allocators_.emplace_back(std::make_shared<Allocator>(
         config_.memory_level, config_.memory_level != MemoryLevel::kSyncToFile
                                   ? ""
@@ -225,25 +239,30 @@ void NeugDB::initAllocators(const std::string& allocator_dir) {
 }
 
 void NeugDB::openGraphAndIngestWals() {
-  thread_num_ = config_.thread_num;
+  max_thread_num_ = config_.max_thread_num;
   try {
     int ckp_id;
-    if (ws_.HeadId() >= 0) {
-      ckp_id = ws_.HeadId();
+    if (checkpoint_mgr_.HeadId() >= 0) {
+      ckp_id = checkpoint_mgr_.HeadId();
     } else {
-      ckp_id = ws_.CreateCheckpoint();
+      ckp_id = checkpoint_mgr_.CreateCheckpoint();
       LOG(INFO) << "No checkpoint found, created new checkpoint: " << ckp_id;
     }
-    auto ckp = ws_.GetCheckpoint(ckp_id);
+    auto ckp = checkpoint_mgr_.GetCheckpoint(ckp_id);
     LOG(INFO) << "Opening graph from checkpoint " << ckp->path();
-    graph_.Open(ckp, config_.memory_level);
+    auto graph = std::make_shared<PropertyGraph>();
+    graph->Open(ckp, config_.memory_level);
 
     // Init allocators before ingesting wals
     initAllocators(ckp->allocator_dir());
 
     neug::WalParserFactory::Init();
     auto wal_parser = WalParserFactory::CreateWalParser(ckp->wal_dir());
-    ingestWals(*wal_parser);
+    ingestWals(*wal_parser, *graph);
+
+    // Create GraphSnapshotStore with the graph at timestamp 0
+    snapshot_store_ =
+        std::make_unique<GraphSnapshotStore>(config_.storage_slot_num, graph);
 
   } catch (std::exception& e) {
     LOG(ERROR) << "Exception: " << e.what();
@@ -251,27 +270,27 @@ void NeugDB::openGraphAndIngestWals() {
   }
 }
 
-void NeugDB::ingestWals(IWalParser& parser) {
+void NeugDB::ingestWals(IWalParser& parser, PropertyGraph& graph) {
   uint32_t from_ts = 1;
   LOG(INFO) << "Ingesting update wals size: "
             << parser.get_update_wals().size();
+
   for (auto& update_wal : parser.get_update_wals()) {
     uint32_t to_ts = update_wal.timestamp;
     if (from_ts < to_ts) {
-      IngestWalRange(graph_, allocators_, parser, from_ts, to_ts);
+      IngestWalRange(graph, allocators_, parser, from_ts, to_ts);
     }
     if (update_wal.size == 0) {
-      graph_.Compact(config_.compact_csr, config_.csr_reserve_ratio,
-                     update_wal.timestamp);
+      graph.Compact(update_wal.timestamp);
       last_compaction_ts_ = update_wal.timestamp;
     } else {
-      UpdateTransaction::IngestWal(graph_, to_ts, update_wal.ptr,
+      UpdateTransaction::IngestWal(graph, to_ts, update_wal.ptr,
                                    update_wal.size, *allocators_[0]);
     }
     from_ts = to_ts + 1;
   }
   if (from_ts <= parser.last_ts()) {
-    IngestWalRange(graph_, allocators_, parser, from_ts, parser.last_ts() + 1);
+    IngestWalRange(graph, allocators_, parser, from_ts, parser.last_ts() + 1);
   }
   LOG(INFO) << "Finish ingesting wals up to timestamp: " << parser.last_ts();
   last_ts_ = parser.last_ts();
@@ -292,28 +311,34 @@ void NeugDB::initPlannerAndQueryProcessor() {
   global_query_cache_ = std::make_shared<execution::GlobalQueryCache>(planner_);
 
   query_processor_ = std::make_shared<QueryProcessor>(
-      graph_, planner_, global_query_cache_, *allocators_[0], thread_num_,
-      config_.mode == DBMode::READ_ONLY);
+      *snapshot_store_, planner_, global_query_cache_, *allocators_[0],
+      max_thread_num_, config_.mode == DBMode::READ_ONLY);
 
   connection_manager_ = std::make_unique<ConnectionManager>(
-      graph_, planner_, query_processor_, config_);
+      *snapshot_store_, planner_, query_processor_, config_);
 }
 
-void NeugDB::createCheckpoint(bool force_compaction, bool reopen) {
+void NeugDB::createCheckpoint(bool reopen) {
   std::unique_lock<std::mutex> lock(mutex_);
-  if (config_.compact_on_close || force_compaction) {
-    graph_.Compact(config_.compact_csr, config_.csr_reserve_ratio,
-                   MAX_TIMESTAMP);
-  }
-  auto ckp_id = ws_.CreateCheckpoint();
-  auto ckp = ws_.GetCheckpoint(ckp_id);
+  SnapshotGuard guard(*snapshot_store_);
+  auto& graph = *guard.get().mutable_graph();
+  graph.Compact(MAX_TIMESTAMP);
+  auto ckp_id = checkpoint_mgr_.CreateCheckpoint();
+  auto ckp = checkpoint_mgr_.GetCheckpoint(ckp_id);
   try {
-    graph_.Dump(ckp, reopen);
+    graph.Dump(ckp, reopen);
   } catch (...) {
     LOG(ERROR) << "Checkpoint dump failed, rolling back checkpoint " << ckp_id;
-    ws_.RemoveCheckpoint(ckp_id);
+    checkpoint_mgr_.RemoveCheckpoint(ckp_id);
     throw;
   }
+  if (reopen) {
+    // Dump with reopen=true rebuilds the PropertyGraph in-place (Clear + Open),
+    // invalidating raw pointers held by the GraphView. Rebuild the view so it
+    // points to the freshly loaded internal structures.
+    guard.get().mutable_view().Rebuild(*guard.get().mutable_graph());
+  }
+  last_ts_ = 0;  // Reset last_ts_ after checkpointing.
   VLOG(1) << "Finish checkpoint: " << ckp->path();
 }
 

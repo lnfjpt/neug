@@ -27,7 +27,6 @@
 #include <vector>
 #include "neug/execution/common/types/value.h"
 #include "neug/utils/bitset.h"
-#include "neug/utils/id_indexer.h"
 #include "neug/utils/property/default_value.h"
 #include "neug/utils/property/types.h"
 #include "neug/utils/result.h"
@@ -152,8 +151,6 @@ struct VertexSchema {
   void delete_properties(const std::vector<std::string>& names,
                          bool is_soft = false);
 
-  void revert_delete_properties(const std::vector<std::string>& names);
-
   bool is_property_soft_deleted(const std::string& prop) const;
 
   /**
@@ -187,6 +184,9 @@ struct VertexSchema {
 
   // Mark whether the vertex property is soft deleted
   std::vector<bool> vprop_soft_deleted;
+
+  // Mark whether this vertex type is temporary (session-scoped, not persisted)
+  bool temporary = false;
 
  private:
   bool has_property_internal(const std::string& prop) const;
@@ -299,8 +299,6 @@ struct EdgeSchema {
 
   bool is_property_soft_deleted(const std::string& prop) const;
 
-  void revert_delete_properties(const std::vector<std::string>& names);
-
   std::string get_property_name(size_t index) const;
 
   int32_t get_property_index(const std::string& prop) const;
@@ -322,6 +320,9 @@ struct EdgeSchema {
 
   // Mark whether the edge property is soft deleted
   std::vector<bool> eprop_soft_deleted;
+
+  // Mark whether this edge type is temporary (session-scoped, not persisted)
+  bool temporary = false;
 
  private:
   bool has_property_internal(const std::string& prop) const;
@@ -463,7 +464,8 @@ class Schema {
       const std::vector<std::tuple<DataType, std::string, size_t>>& primary_key,
       size_t max_vnum = static_cast<size_t>(1) << 32,
       const std::string& description = "",
-      const std::vector<execution::Value>& default_property_values = {});
+      const std::vector<execution::Value>& default_property_values = {},
+      bool temporary = false);
 
   void AddEdgeLabel(
       const std::string& src_label, const std::string& dst_label,
@@ -474,26 +476,25 @@ class Schema {
       bool ie_mutable = true,
       std::optional<std::string> sort_key_for_nbr = std::nullopt,
       const std::string& description = "",
-      const std::vector<execution::Value>& default_property_values = {});
+      const std::vector<execution::Value>& default_property_values = {},
+      bool temporary = false);
+
+  bool is_vertex_label_temporary(label_t label) const;
+  bool is_edge_label_temporary(uint32_t edge_triplet_key) const;
+  std::vector<label_t> get_temporary_vertex_labels() const;
+  std::vector<uint32_t> get_temporary_edge_triplet_keys() const;
 
   void DeleteVertexLabel(const std::string& label, bool is_soft = false);
 
   void DeleteVertexLabel(label_t label, bool is_soft = false);
 
-  void RevertDeleteVertexLabel(const std::string& label);
-
   void DeleteEdgeLabel(const std::string& label, bool is_soft = false);
-
-  void RevertDeleteEdgeLabel(label_t label);
 
   void DeleteEdgeLabel(const label_t& src, const label_t& dst,
                        const label_t& edge, bool is_soft = false);
 
   void DeleteEdgeLabel(const std::string& src, const std::string& dst,
                        const std::string& edge, bool is_soft = false);
-
-  void RevertDeleteEdgeLabel(const std::string& src, const std::string& dst,
-                             const std::string& edge);
 
   void AddVertexProperties(
       const std::string& label,
@@ -519,54 +520,15 @@ class Schema {
                             const std::vector<std::string>& properties_names,
                             const std::vector<std::string>& properties_renames);
 
-  bool is_vertex_label_soft_deleted(const std::string& label) const;
-
-  bool is_vertex_label_soft_deleted(label_t v_label) const;
-
-  bool is_edge_label_soft_deleted(label_t src_label, label_t dst_label,
-                                  label_t edge_label) const;
-
-  bool is_edge_label_soft_deleted(const std::string& src_label,
-                                  const std::string& dst_label,
-                                  const std::string& edge_label) const;
-
-  bool is_vertex_property_soft_deleted(const std::string& label,
-                                       const std::string& property) const;
-
-  bool is_vertex_property_soft_deleted(label_t label,
-                                       const std::string& property) const;
-
-  bool is_edge_property_soft_deleted(const std::string& src_label,
-                                     const std::string& dst_label,
-                                     const std::string& edge_label,
-                                     const std::string& property) const;
-
-  bool is_edge_property_soft_deleted(label_t src_label, label_t dst_label,
-                                     label_t edge_label,
-                                     const std::string& property) const;
-
   void DeleteVertexProperties(const std::string& label,
                               const std::vector<std::string>& properties_names,
                               bool is_soft = false);
-
-  void RevertDeleteVertexProperties(
-      const std::string& label,
-      const std::vector<std::string>& properties_names);
 
   void DeleteEdgeProperties(const std::string& src_label,
                             const std::string& dst_label,
                             const std::string& edge_label,
                             const std::vector<std::string>& properties_names,
                             bool is_soft = false);
-
-  void RevertDeleteEdgeProperties(
-      const std::string& src_label, const std::string& dst_label,
-      const std::string& edge_label,
-      const std::vector<std::string>& properties_names);
-
-  void RevertDeleteEdgeProperties(
-      label_t src_label, label_t dst_label, label_t edge_label,
-      const std::vector<std::string>& properties_names);
 
   label_t vertex_label_num() const;
 
@@ -754,6 +716,14 @@ class Schema {
 
   static neug::result<YAML::Node> DumpToYaml(const Schema& schema);
 
+  /**
+   * @brief Create a copy of this Schema with all temporary labels removed.
+   *
+   * Used by the persistence/checkpoint path: temporary labels are
+   * session-scoped and must not be written to disk.
+   */
+  Schema StripTemporary() const;
+
   bool Equals(const Schema& other) const;
 
   neug::result<YAML::Node> to_yaml() const;
@@ -826,8 +796,6 @@ class Schema {
   friend class PropertyGraph;
 };
 
-InArchive& operator<<(InArchive& arc, const DataType& type);
-OutArchive& operator>>(OutArchive& arc, DataType& type);
 InArchive& operator<<(InArchive& arc, const VertexSchema& schema);
 InArchive& operator<<(InArchive& arc, const EdgeSchema& schema);
 OutArchive& operator>>(OutArchive& arc, VertexSchema& schema);

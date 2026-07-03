@@ -8,22 +8,23 @@ The following table showcases all data types supported by NeuG and their differe
 
 | Category | Type | System Default value | NeuG Example | Neo4j Example |
 |----------|------|---------------------|--------------|---------------|
-| Primitive | INT32 | `0` | `Return CAST(42, 'INT32')` | `Return 42` |
-| Primitive | UINT32 | `0` | `Return CAST(42, 'UINT32')` | unsupported |
-| Primitive | INT64 | `0` | `Return 9223372036854775807` | `Return 9223372036854775807` |
-| Primitive | UINT64 | `0` | `Return CAST(9223372036854775807, 'UINT64')` | unsupported |
-| Primitive | FLOAT | `0.0` | `Return CAST(3.14, 'FLOAT')` | `Return 3.14f` |
-| Primitive | DOUBLE | `0.0` | `Return 3.14159265359` | `Return 3.14159265359d` |
-| Primitive | BOOL | `false` | `Return true` | `Return true` |
-| Primitive | NULL | `null` | `Return null` | `Return null` |
-| String | VARCHAR | `''` (empty string) | `Return 'Hello World'` | `Return 'Hello World'` |
-| Temporal | DATE | `1970-01-01` | `Return date('2022-06-06')` | `Return date('2022-06-06')` |
-| Temporal | DATETIME | `1970-01-01 00:00:00` | `Return timestamp('2022-06-06 12:00:00')` | `Return datetime('2022-06-06T12:00:00')` |
-| Temporal | INTERVAL | `0 year 0 month 0 day` (zero interval) | `RETURN interval('1 year 2 month 3 day')` | `Return duration('P1Y2M3D')` |
-| Composite | LIST | `[]` (empty list) | `Return [1, 2, 3]` | `Return [1, 2, 3]` |
-| Pattern | NODE | `{}` (empty node) | `{_ID: 0, _LABEL: person, id: 1, name: marko, age: 29}` | `(:person {name: 'Alice', age: 30})` |
-| Pattern | REL | `{}` (empty edge) | `{_ID: 2, _LABEL: knows, _SRC_LABEL: person, _DST_LABEL: person, _SRC_ID: 0, _DST_ID: 2, weight: 1.0}` | `[:knows {weight: 1.0}]` |
-| Pattern | REPEATED PATH | `[]` (empty path) | `{_ID: 0, _LABEL: person}, {_ID: 4294967298, _LABEL: created, _SRC_LABEL: person, _DST_LABEL: person, _SRC_ID: 0, _DST_ID: 2}, {_ID: 2, _LABEL: person}, {_ID: 4297064449, _LABEL: created, _SRC_LABEL: person, _DST_LABEL: software, _SRC_ID: 2, _DST_ID: 72057594037927937}, {_ID: 72057594037927937, _LABEL: software}` | `(:Person {name: "Kiefer", id: 4, age: 1992})-[:FOLLOWS]->(:Person {name: "Jack", id: 3, age: 1979})-[:FOLLOWS]->(:Person {name: "Kevin", id: 5, age: 1997})` |
+| Primitive | INT32 | `0` | `RETURN CAST(42, 'INT32')` | `RETURN 42` |
+| Primitive | UINT32 | `0` | `RETURN CAST(42, 'UINT32')` | unsupported |
+| Primitive | INT64 | `0` | `RETURN 9223372036854775807` | `RETURN 9223372036854775807` |
+| Primitive | UINT64 | `0` | `RETURN CAST(9223372036854775807, 'UINT64')` | unsupported |
+| Primitive | FLOAT | `0.0` | `RETURN CAST(3.14, 'FLOAT')` | `RETURN 3.14f` |
+| Primitive | DOUBLE | `0.0` | `RETURN 3.14159265359` | `RETURN 3.14159265359d` |
+| Primitive | BOOL | `false` | `RETURN true` | `RETURN true` |
+| Primitive | NULL | `null` | `RETURN null` | `RETURN null` |
+| String | VARCHAR | `''` (empty string) | `RETURN 'Hello World'` | `RETURN 'Hello World'` |
+| Temporal | DATE | `1970-01-01` | `RETURN date('2022-06-06')` | `RETURN date('2022-06-06')` |
+| Temporal | DATETIME | `1970-01-01 00:00:00` | `RETURN timestamp('2022-06-06 12:00:00')` | `RETURN datetime('2022-06-06T12:00:00')` |
+| Temporal | INTERVAL | `0 year 0 month 0 day` (zero interval) | `RETURN interval('1 year 2 month 3 day')` | `RETURN duration('P1Y2M3D')` |
+| Composite | LIST | `[]` (empty list) | `RETURN [1, 2, 3]` | `RETURN [1, 2, 3]` |
+| Composite | ARRAY | fixed-size child defaults, for example `[0, 0, 0]` for `INT32[3]` | `readings INT32[3]` in a schema | unsupported as a separate fixed-size type |
+| Pattern | NODE | `{}` (empty node) | `{_ID: 0, _LABEL: Person, id: 1, name: marko, age: 29}` | `(:Person {name: 'Alice', age: 30})` |
+| Pattern | REL | `{}` (empty edge) | `{_ID: 2, _LABEL: KNOWS, _SRC_LABEL: Person, _DST_LABEL: Person, _SRC_ID: 0, _DST_ID: 2, weight: 1.0}` | `[:KNOWS {weight: 1.0}]` |
+| Pattern | REPEATED PATH | `[]` (empty path) | `{_ID: 0, _LABEL: Person}, {_ID: 4294967298, _LABEL: CREATED, _SRC_LABEL: Person, _DST_LABEL: Person, _SRC_ID: 0, _DST_ID: 2}, {_ID: 2, _LABEL: Person}, {_ID: 4297064449, _LABEL: CREATED, _SRC_LABEL: Person, _DST_LABEL: Software, _SRC_ID: 2, _DST_ID: 72057594037927937}, {_ID: 72057594037927937, _LABEL: Software}` | `(:Person {name: "Kiefer", id: 4, age: 1992})-[:FOLLOWS]->(:Person {name: "Jack", id: 3, age: 1979})-[:FOLLOWS]->(:Person {name: "Kevin", id: 5, age: 1997})` |
 
 ## Detailed Introduction
 
@@ -32,7 +33,7 @@ The following table showcases all data types supported by NeuG and their differe
 #### INT32
 - **Description**: 32-bit signed integer type
 - **Range**: [2,147,483,648, 2,147,483,647]
-- **Query Example**: `Return CAST(42, 'INT32') as int32_value;`
+- **Query Example**: `RETURN CAST(42, 'INT32') AS int32_value;`
 
 #### UINT32
 - **Description**: 32-bit unsigned integer type
@@ -123,12 +124,12 @@ RETURN ['marko', 2];
 
 Combining different property types from nodes in a list:
 ```cypher
-MATCH (n:person) RETURN [n.name, n.age];
+MATCH (n:Person) RETURN [n.name, n.age];
 ```
 
 Supporting nested list structures:
 ```cypher
-MATCH (n:person) RETURN [["name", n.name], ["age", n.age]];
+MATCH (n:Person) RETURN [["name", n.name], ["age", n.age]];
 ```
 
 **Key Technical Details:**
@@ -138,22 +139,69 @@ MATCH (n:person) RETURN [["name", n.name], ["age", n.age]];
 - Nested lists are fully supported for complex data structures
 - The system maintains type safety while allowing flexibility in list composition
 
+#### ARRAY
+- **Description**: Fixed-size ordered collection whose elements share the declared child type
+- **Syntax**: Use `T[N]`, where `T` is the child type and `N` is a positive fixed length
+- **Query Example**: `CREATE NODE TABLE Sensor(id INT64, readings INT64[3], PRIMARY KEY(id));`
+
+`ARRAY` is NeuG's fixed-size counterpart to `LIST`. `T[]` declares a variable-length list, while `T[N]` declares an array with exactly `N` elements. Array literals use the same bracket syntax as lists; the declared schema or another typed context determines whether the value is stored as a `LIST` or an `ARRAY`. `CAST` is not a general `LIST`/`ARRAY` compatibility mechanism.
+
+```cypher
+CREATE NODE TABLE Sensor(
+    id INT64,
+    readings INT32[3],
+    PRIMARY KEY(id)
+);
+
+CREATE (s:Sensor {id: 1, readings: [10, 20, 30]});
+MATCH (s:Sensor) RETURN s.readings;
+```
+
+Arrays can also be used on relationship properties:
+
+```cypher
+CREATE REL TABLE Knows(
+    FROM Person TO Person,
+    weights DOUBLE[2]
+);
+```
+
+Multi-dimensional arrays are written by chaining fixed lengths. `INT32[2][3]` means an outer array with 3 elements, where each element is an `INT32[2]` array:
+
+```cypher
+CREATE NODE TABLE Matrix(
+    id INT64,
+    grid INT32[2][3],
+    PRIMARY KEY(id)
+);
+
+CREATE (m:Matrix {id: 1, grid: [[1, 2], [3, 4], [5, 6]]});
+```
+
+**Key Technical Details:**
+- Array values must match the declared length at every fixed-size dimension
+- Missing or `NULL` array properties during `CREATE` use the child type's default value for each element
+- Explicit array default literals in DDL, such as `prop INT32[3] DEFAULT [1, 2, 3]`, are supported
+- `RETURN`, equality filters, zero-based indexing, `SET`, `MERGE`, `collect()`, and `UNWIND` support array-valued properties
+- `CAST` does not convert between `LIST` and `ARRAY`; array property values are typed by schema-aware compiler contexts
+- Setting an existing array property to `NULL` is not supported yet
+
 ### Graph Types
 
 #### NODE
 - **Description**: Represents a node in the graph
 - **Internal Structure** (order is insignificant): `_ID` (internal identifier), `_LABEL` (indication of node type) and property fields
-- **Query Example**: `MATCH (n:person) RETURN n AS node_value;`
-- **NeuG Format**: `{_ID: 0, _LABEL: person, id: 1, name: marko, age: 29}`
+- **Query Example**: `MATCH (n:Person) RETURN n AS node_value;`
+- **NeuG Format**: `{_ID: 0, _LABEL: Person, id: 1, name: marko, age: 29}`
 
 #### REL (Edge)
 - **Description**: Represents an edge in the graph
 - **Internal Structure** (order is insignificant): `_ID` (edge internal identifier),  `_LABEL` (indication of edge type), `_SRC_ID` (internal identifier of source node), `_SRC_LABEL` (label of source node), `_DST_ID` (internal identifier of destination node), `_DST_LABEL` (label of destination node), and property fields
-- **Query Example**: `MATCH ()-[r:knows]->() RETURN r AS rel_value;`
-- **NeuG Format**: `{_ID: 2, _LABEL: knows, _SRC_ID: 0, _SRC_LABEL: person, _DST_ID: 2, _DST_LABEL: person, weight: 1.0}`
+- **Query Example**: `MATCH ()-[r:KNOWS]->() RETURN r AS rel_value;`
+- **NeuG Format**: `{_ID: 2, _LABEL: KNOWS, _SRC_ID: 0, _SRC_LABEL: Person, _DST_ID: 2, _DST_LABEL: Person, weight: 1.0}`
 
 #### PATH
 - **Description**:  Represents a graph path formed by alternating nodes and edges.
 - **Internal Structure**: An **ordered sequence** of nodes and edges along the path, including the starting and ending nodes.
-- **Query Example**: `MATCH (a:person)-[p*1..2]->(c) RETURN p AS path_value;`
-- **NeuG Format**: `{_ID: 0, _LABEL: person}, {_ID: 4294967298, _LABEL: created, _SRC_LABEL: person, _DST_LABEL: person, _SRC_ID: 0, _DST_ID: 2}, {_ID: 2, _LABEL: person}, {_ID: 4297064449, _LABEL: created, _SRC_LABEL: person, _DST_LABEL: software, _SRC_ID: 2, _DST_ID: 72057594037927937}, {_ID: 72057594037927937, _LABEL: software}`
+- **Query Example**: `MATCH (a:Person)-[p*1..2]->(c) RETURN p AS path_value;`
+- **NeuG Format**: `{_ID: 0, _LABEL: Person}, {_ID: 4294967298, _LABEL: CREATED, _SRC_LABEL: Person, _DST_LABEL: Person, _SRC_ID: 0, _DST_ID: 2}, {_ID: 2, _LABEL: Person}, {_ID: 4297064449, _LABEL: CREATED, _SRC_LABEL: Person, _DST_LABEL: Software, _SRC_ID: 2, _DST_ID: 72057594037927937}, {_ID: 72057594037927937, _LABEL: Software}`

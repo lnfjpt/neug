@@ -62,6 +62,16 @@ Create nodes and edges in a single statement. This is useful when you need to cr
 CREATE (a:person {name: 'mars', age: 28})-[:knows {weight: 16.0}]->(b:person {name: 'jennie', age: 26})
 ```
 
+### Creating Array Properties
+
+Fixed-size array properties are written with bracket literals. The value length must match the schema declaration.
+
+```cypher
+CREATE NODE TABLE Sensor(id INT64, readings INT32[3], PRIMARY KEY(id));
+
+CREATE (s:Sensor {id: 1, readings: [10, 20, 30]});
+```
+
 ### Creating Edges Between Existing Nodes
 
 First match existing nodes, then create an edge between them.
@@ -80,10 +90,19 @@ The SET clause is used to update properties of existing nodes and edges.
 Update properties of a specific node.
 
 ```cypher
-MATCH (a:person)
+MATCH (a:Person)
 WHERE a.name = 'marko'
 SET a.age = 37, a.city = 'New York'
 RETURN a.*
+```
+
+Array-valued properties can be updated with another fixed-size array value:
+
+```cypher
+MATCH (s:Sensor)
+WHERE s.id = 1
+SET s.readings = [30, 40, 50]
+RETURN s.readings
 ```
 
 ### Updating Edge Properties
@@ -91,7 +110,7 @@ RETURN a.*
 Update properties of a specific edge.
 
 ```cypher
-MATCH (a:person)-[k:knows]->(b:person)
+MATCH (a:Person)-[k:KNOWS]->(b:Person)
 WHERE a.name = 'marko' AND b.name = 'josh'
 SET k.weight = 10.0, k.since = '2023-01-01'
 RETURN k.*
@@ -106,7 +125,7 @@ The DELETE clause is used to remove nodes and edges from the graph.
 Delete a node from the graph. By default, you can only delete nodes that have no edge to avoid creating dangling edges.
 
 ```cypher
-MATCH (a:person)
+MATCH (a:Person)
 WHERE a.name = 'marko'
 DELETE a
 ```
@@ -116,7 +135,7 @@ DELETE a
 Use DETACH DELETE to forcibly delete a node and all its attached edges. This prevents errors when trying to delete nodes that have existing edges.
 
 ```cypher
-MATCH (a:person)
+MATCH (a:Person)
 WHERE a.name = 'marko'
 DETACH DELETE a
 ```
@@ -126,7 +145,7 @@ DETACH DELETE a
 Delete specific edges between nodes while keeping the nodes.
 
 ```cypher
-MATCH (a:person)-[k:knows]->(b:person)
+MATCH (a:Person)-[k:KNOWS]->(b:Person)
 WHERE a.name = 'marko' AND b.name = 'josh'
 DELETE k
 ```

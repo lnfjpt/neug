@@ -51,8 +51,6 @@ class CsrBase : public Module {
   // space, the reserved space will count as 0.
   virtual size_t edge_num() const = 0;
 
-  virtual void reset_timestamp() = 0;
-
   virtual void compact() = 0;
 
   virtual void resize(vid_t vnum) = 0;
@@ -87,7 +85,14 @@ class CsrBase : public Module {
       Allocator& alloc) = 0;
 
   virtual std::tuple<std::vector<vid_t>, std::vector<vid_t>> batch_export(
-      std::shared_ptr<ColumnBase> prev_data_col) const = 0;
+      ColumnBase* prev_data_col) const = 0;
+
+  /// Detach the adjacency list of vertex vid so subsequent writes
+  /// are isolated from the parent CSR.  Must only be called on a COW CSR
+  /// for a vertex whose adjlist has not yet been detached.  The caller
+  /// (e.g. PropertyGraphCowState) is responsible for tracking which
+  /// adjlists have been detached.
+  virtual void DetachVertex(vid_t vid, Allocator& alloc) = 0;
 };
 
 template <typename EDATA_T>

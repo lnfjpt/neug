@@ -28,8 +28,8 @@ conn = db.connect()
 
 # Run analytics
 result = conn.execute("""
-    MATCH (a:person)-[:knows]->(b:person)-[:knows]->(c:person),
-        (a)-[:knows]->(c)
+    MATCH (a:Person)-[:KNOWS]->(b:Person)-[:KNOWS]->(c:Person),
+        (a)-[:KNOWS]->(c)
     RETURN a.fName, b.fName, c.fName
 """)
 
@@ -70,18 +70,21 @@ NeuG is developed by the [GraphScope](https://graphscope.io) team at Alibaba, br
 
 ## What's Next
 
-NeuG is actively evolving. Here's what we're working on for v0.2:
+NeuG is actively evolving. Recent additions:
 
-- **Node.js Binding** — AI Agent integration ready
-- **Graph Algorithms** — In particular Leiden community detection for AI applications
-- **Data Lake Support** — S3/OSS + Parquet integration
+- **[Node.js Client](../../reference/nodejs_api/)** — Available since v0.1.3, AI Agent integration ready
+- **[Graph Algorithms](../../extensions/load_gds/)** — Available since v0.1.3, including Leiden community detection for AI applications
+- **[Data Lake Support](../../extensions/load_httpfs/)** — Available since v0.1.2, [S3/OSS](../../extensions/load_httpfs/) + [Parquet](../../extensions/load_parquet/) integration
+
+Upcoming for v0.2:
+
 - **Vector DB Extension** — RAG & GraphRAG support
 
 Star us on [GitHub](https://github.com/alibaba/neug) to stay updated on new releases.
 
 ## Next Steps
 
-- **[Installation](../../installation/installation)** - Setup guide for Python and C++
+- **[Installation](../../installation/installation)** - Setup guide for Python, Node.js, and C++
 - **[Getting Started](../../getting_started/getting_started)** - Basic operations and examples  
 - **[Data Import](../../data_io/import_data)** - Loading data into your database
 - **[Cypher Manual](../../cypher_manual)** - Query language reference

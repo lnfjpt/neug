@@ -35,12 +35,12 @@ When the database is closed, all the connections to the database will be closed 
     >>> conn = db.connect()
 
     >>> # Use the connection to interact with the database
-    >>> conn.execute('CREATE TABLE person(id INT64, name STRING);')
-    >>> conn.execute('CREATE TABLE knows(FROM person TO person, weight DOUBLE);')
+    >>> conn.execute('CREATE NODE TABLE Person(id INT64, name STRING);')
+    >>> conn.execute('CREATE REL TABLE KNOWS(FROM Person TO Person, weight DOUBLE);')
 
     >>> # Import data from csv file.
-    >>> conn.execute('COPY person FROM "person.csv"')
-    >>> conn.execute('COPY knows FROM "knows.csv" (from="person", to="person");')
+    >>> conn.execute('COPY Person FROM "person.csv"')
+    >>> conn.execute('COPY KNOWS FROM "knows.csv" (from="Person", to="Person");')
 
     >>> res = conn.execute('MATCH(n) return n.id;)
     >>> for record in res:
@@ -70,7 +70,8 @@ Open a database.
   - `mode` (str)
     Mode to open the database, could be 'r', 'read', 'readwrite', 'w', 'rw', 'write'. Default is 'r' for read-only.
   - `max_thread_num` (int)
-    Maximum number of threads to use. Default is 0, which means no limit.
+    Maximum database thread count. The default `0` auto-selects from hardware
+    concurrency and falls back to `1` if the runtime cannot detect it.
   - `checkpoint_on_close` (bool)
     Whether to automatically create a checkpoint when the database is closed. Default is True.
     If False, no checkpoint is created automatically when close the database.
@@ -139,7 +140,10 @@ Connect to the database.
 ### serve
 
 ```python
-def serve(port: int = 10000, host: str = "localhost", blocking: bool = True)
+def serve(port: int = 10000,
+          host: str = "localhost",
+          blocking: bool = True,
+          thread_num: int = 0)
 ```
 
 Start the database server for handling remote connections(TP mode).
@@ -157,12 +161,21 @@ documentation of Session.
     The host to listen on. Default is 'localhost'.
   - `blocking` (bool)
     Whether to block the process after starting the database server.
+  - `thread_num` (int)
+    Service thread count. The default `0` auto-selects from the database
+    `max_thread_num`. If set explicitly, it must be less than or equal to
+    `max_thread_num`. With the default database thread setting,
+    `max_thread_num` is resolved from hardware concurrency and falls back to
+    `1` if the runtime cannot detect it.
 
 - **Returns:**
   - `uri` (str)
     The URI of the server, in the format of 'http://host:port'.
 
 - **Raises:**
+  - **ValueError**
+    If `thread_num` is negative, greater than the available CPU core count, or
+    greater than the database `max_thread_num`.
   - **RuntimeError**
     If there are open connections to the local database.
     If the database is already serving.
@@ -170,6 +183,7 @@ documentation of Session.
 - **Notes:**
   - **Make sure to close all connections before starting the server.**
   - **After starting the server, no new connections to the local database will be allowed.**
+  - **`thread_num` controls server-side service threads; client-side `Session(..., num_threads=...)` controls the HTTP connection pool used by that client.**
 
 <a id="neug.database.Database.stop_serving"></a>
 

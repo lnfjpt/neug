@@ -28,10 +28,11 @@
 #include <memory>
 
 #include "kuzu_fwd.h"
+#include "neug/compiler/graph/graph_entry.h"
 #include "neug/compiler/main/option_config.h"
 #include "neug/compiler/storage/buffer_manager/memory_manager.h"
 #include "neug/utils/api.h"
-#include "neug/utils/file_sys/file_system.h"
+#include "neug/utils/io/vfs/file_system.h"
 
 namespace neug {
 namespace common {
@@ -100,6 +101,10 @@ class MetadataManager {
    * StatsManager. */
   std::shared_ptr<storage::StatsManager> getStatsManager() const;
 
+  graph::GraphEntrySet& getGraphEntrySetUnsafe();
+
+  const graph::GraphEntrySet& getGraphEntrySet() const;
+
  private:
   std::unique_ptr<catalog::Catalog> catalog;
   mutable std::atomic_flag statsManagerLock = ATOMIC_FLAG_INIT;
@@ -107,6 +112,7 @@ class MetadataManager {
   std::unique_ptr<storage::MemoryManager> memoryManager;
   std::unique_ptr<neug::fsys::FileSystemRegistry> vfs;
   std::unique_ptr<extension::ExtensionManager> extensionManager;
+  std::unique_ptr<graph::GraphEntrySet> graphEntrySet;
 };
 
 }  // namespace main

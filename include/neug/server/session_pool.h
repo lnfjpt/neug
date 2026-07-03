@@ -16,6 +16,7 @@
 
 #include "neug/config.h"
 #include "neug/execution/execute/query_cache.h"
+#include "neug/main/neug_db.h"
 #include "neug/server/neug_db_session.h"
 #include "neug/storages/allocators.h"
 #include "neug/storages/graph/property_graph.h"
@@ -28,14 +29,14 @@ class NeugDBService;
 
 struct SessionLocalContext {
   SessionLocalContext(
-      PropertyGraph& graph_, std::shared_ptr<IGraphPlanner> planner,
+      NeugDB& db, std::shared_ptr<IGraphPlanner> planner,
       std::shared_ptr<execution::GlobalQueryCache> global_query_cache,
       std::shared_ptr<Allocator> alloc,
       std::shared_ptr<IVersionManager> version_manager, int thread_id,
       std::unique_ptr<IWalWriter> in_logger, const NeugDBConfig& config_)
       : allocator(alloc),
         logger(std::move(in_logger)),
-        session(graph_, planner, global_query_cache, version_manager, *alloc,
+        session(db, planner, global_query_cache, version_manager, *alloc,
                 *logger, config_, thread_id) {
     logger->open();
   }
@@ -129,7 +130,7 @@ class SessionGuard {
  * - Automatic WAL (Write-Ahead Log) management per session
  * - Memory-aligned session contexts for cache efficiency
  *
- * **Pool Size:** Determined by `NeugDBConfig::thread_num`, typically
+ * **Pool Size:** Determined by `NeugDBConfig::max_thread_num`, typically
  * matching the number of concurrent request handlers.
  *
  * @see NeugDBService for HTTP service wrapper
@@ -139,19 +140,20 @@ class SessionGuard {
 class SessionPool {
  public:
   explicit SessionPool(
-      PropertyGraph& graph, std::shared_ptr<IGraphPlanner> planner,
+      NeugDB& db, std::shared_ptr<IGraphPlanner> planner,
       std::shared_ptr<execution::GlobalQueryCache> global_query_cache,
       std::shared_ptr<IVersionManager> version_manager,
       std::vector<std::shared_ptr<Allocator>>& allocators,
       const NeugDBConfig& config) {
-    session_num_ = config.thread_num;
+    session_num_ = config.max_thread_num;
     WalWriterFactory::Init();
-    contexts_ = static_cast<SessionLocalContext*>(
-        aligned_alloc(4096, sizeof(SessionLocalContext) * config.thread_num));
-    for (int i = 0; i < config.thread_num; ++i) {
+    contexts_ = static_cast<SessionLocalContext*>(aligned_alloc(
+        4096, sizeof(SessionLocalContext) * config.max_thread_num));
+    for (int i = 0; i < config.max_thread_num; ++i) {
       new (&contexts_[i]) SessionLocalContext(
-          graph, planner, global_query_cache, allocators[i], version_manager, i,
-          WalWriterFactory::CreateWalWriter(graph.checkpoint().wal_dir(), i),
+          db, planner, global_query_cache, allocators[i], version_manager, i,
+          WalWriterFactory::CreateWalWriter(db.graph().checkpoint().wal_dir(),
+                                            i),
           config);
     }
     bthread_cond_init(&cond_, nullptr);

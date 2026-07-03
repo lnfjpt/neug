@@ -17,11 +17,23 @@
 #include <filesystem>
 
 #include "neug/storages/checkpoint_manager.h"
+#include "neug/storages/checkpoint_manifest.h"
 #include "neug/storages/module/module_factory.h"
 #include "neug/utils/serialization/in_archive.h"
 #include "neug/utils/serialization/out_archive.h"
 
 namespace neug {
+
+namespace {
+
+// GCC 11’s libstdc++ does not support std::make_shared<T[]>
+std::shared_ptr<std::atomic<timestamp_t>[]> make_timestamp_array(size_t size) {
+  return std::shared_ptr<std::atomic<timestamp_t>[]>(
+      new std::atomic<timestamp_t>[size],
+      std::default_delete<std::atomic<timestamp_t>[]>());
+}
+
+}  // namespace
 
 void VertexTimestamp::Open(Checkpoint& ckp, const ModuleDescriptor& desc,
                            MemoryLevel level) {
@@ -34,7 +46,8 @@ void VertexTimestamp::Open(Checkpoint& ckp, const ModuleDescriptor& desc,
   }
 }
 
-ModuleDescriptor VertexTimestamp::Dump(Checkpoint& ckp) {
+void VertexTimestamp::Dump(Checkpoint& ckp, CheckpointManifest& meta,
+                           const std::string& key) {
   auto uuid = ckp.CreateRuntimeObject();
   std::string ts_filename = ckp.runtime_dir() + "/" + uuid;
   // Before dump, reset the timestamp of modified vertices
@@ -50,7 +63,7 @@ ModuleDescriptor VertexTimestamp::Dump(Checkpoint& ckp) {
   descriptor.set_path(ModuleDescriptor::kDataPath,
                       ckp.CommitRuntimeObject(uuid));
   descriptor.module_type = ModuleTypeName();
-  return descriptor;
+  meta.set_module(key, descriptor);
 }
 
 void VertexTimestamp::Init(vid_t init_vertex_num, vid_t max_vertex_num) {
@@ -63,7 +76,7 @@ void VertexTimestamp::Init(vid_t init_vertex_num, vid_t max_vertex_num) {
   max_vertex_num_ = std::max(init_vertex_num, max_vertex_num);
   vid_t capacity = max_vertex_num_ - init_vertex_num_;
   if (capacity) {
-    inserted_vertices_ = std::make_unique<std::atomic<timestamp_t>[]>(capacity);
+    inserted_vertices_ = make_timestamp_array(capacity);
     for (vid_t i = 0; i < capacity; ++i) {
       inserted_vertices_[i].store(std::numeric_limits<timestamp_t>::max());
     }
@@ -133,7 +146,7 @@ timestamp_t VertexTimestamp::RemoveVertex(vid_t v) {
     return old_ts;
   } else {
     if (!removed_vertices_) {
-      removed_vertices_ = std::make_unique<std::set<vid_t>>();
+      removed_vertices_ = std::make_shared<std::set<vid_t>>();
     }
     assert(removed_vertices_->find(v) == removed_vertices_->end());
     removed_vertices_->insert(v);
@@ -206,7 +219,7 @@ void VertexTimestamp::load_ts(const std::string& ts_filename) {
   arc >> removed_size;
   if (removed_size > 0) {
     if (!removed_vertices_) {
-      removed_vertices_ = std::make_unique<std::set<vid_t>>();
+      removed_vertices_ = std::make_shared<std::set<vid_t>>();
     }
     for (uint32_t i = 0; i < removed_size; ++i) {
       vid_t v;
@@ -262,8 +275,7 @@ void VertexTimestamp::dump_ts(const std::string& ts_filename) {
 // Keep_front is false: keep the back part when resizing
 void VertexTimestamp::resize_inserted_vertices(size_t new_size,
                                                bool keep_front) {
-  auto new_inserted_vertices =
-      std::make_unique<std::atomic<timestamp_t>[]>(new_size);
+  auto new_inserted_vertices = make_timestamp_array(new_size);
   if (!inserted_vertices_) {
     for (vid_t i = 0; i < new_size; ++i) {
       new_inserted_vertices[i].store(DELETED_TIMESTAMP);
@@ -288,6 +300,34 @@ void VertexTimestamp::resize_inserted_vertices(size_t new_size,
     new_inserted_vertices[i].store(DELETED_TIMESTAMP);
   }
   inserted_vertices_.swap(new_inserted_vertices);
+}
+
+std::unique_ptr<Module> VertexTimestamp::Clone() const {
+  auto new_vertex_ts = std::make_unique<VertexTimestamp>();
+  new_vertex_ts->init_vertex_num_ = init_vertex_num_;
+  new_vertex_ts->max_vertex_num_ = max_vertex_num_;
+  new_vertex_ts->inserted_vertices_ = inserted_vertices_;
+  new_vertex_ts->removed_vertices_ = removed_vertices_;
+  return new_vertex_ts;
+}
+
+// DeepCopy:
+void VertexTimestamp::Detach(Checkpoint& /*ckp*/, MemoryLevel /*level*/) {
+  if (inserted_vertices_) {
+    vid_t num = max_vertex_num_ - init_vertex_num_;
+    auto prev = inserted_vertices_;
+    inserted_vertices_ = make_timestamp_array(num);
+    for (vid_t v = 0; v < num; ++v) {
+      inserted_vertices_[v].store(prev[v].load());
+    }
+  }
+  if (removed_vertices_) {
+    auto prev = removed_vertices_;
+    removed_vertices_ = std::make_shared<std::set<vid_t>>();
+    for (const auto& v : *prev) {
+      removed_vertices_->insert(v);
+    }
+  }
 }
 
 void VertexTimestamp::Close() { Reset(); }

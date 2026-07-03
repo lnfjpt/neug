@@ -15,6 +15,7 @@
 
 #include "neug/storages/csr/immutable_csr.h"
 
+#include "neug/storages/checkpoint_manifest.h"
 #include "neug/storages/module/module_factory.h"
 
 #include <glog/logging.h>
@@ -41,14 +42,15 @@ void ImmutableCsr<EDATA_T>::Open(Checkpoint& ckp, const ModuleDescriptor& desc,
                                  MemoryLevel memory_level) {
   unsorted_since_ = std::stoull(desc.get("unsorted_since").value_or("0"));
   edge_num_.store(std::stoull(desc.get("edge_num").value_or("0")));
-  degree_list_buffer_ = ckp.OpenFile(
+  degree_list_buffer_ = std::shared_ptr<IDataContainer>(ckp.OpenFile(
       desc.get_path(ModuleDescriptor::kDegreeListPath).value_or(""),
-      memory_level);
-  nbr_list_buffer_ = ckp.OpenFile(
-      desc.get_path(ModuleDescriptor::kNbrListPath).value_or(""), memory_level);
+      memory_level));
+  nbr_list_buffer_ = std::shared_ptr<IDataContainer>(
+      ckp.OpenFile(desc.get_path(ModuleDescriptor::kNbrListPath).value_or(""),
+                   memory_level));
   auto v_cap = size();
-  adj_list_buffer_ = ckp.CreateRuntimeContainer(v_cap * sizeof(nbr_t*),
-                                                MemoryLevel::kInMemory);
+  adj_list_buffer_ = std::shared_ptr<IDataContainer>(ckp.CreateRuntimeContainer(
+      v_cap * sizeof(nbr_t*), MemoryLevel::kInMemory));
   auto adj_lists_ptr = reinterpret_cast<nbr_t**>(adj_list_buffer_->GetData());
   auto degree_list_ptr =
       reinterpret_cast<const int*>(degree_list_buffer_->GetData());
@@ -63,10 +65,19 @@ void ImmutableCsr<EDATA_T>::Open(Checkpoint& ckp, const ModuleDescriptor& desc,
     }
     cur_nbr_list_ptr += deg;
   }
+  refresh_prefetch_policy();
 }
 
 template <typename EDATA_T>
-ModuleDescriptor ImmutableCsr<EDATA_T>::Dump(Checkpoint& ckp) {
+void ImmutableCsr<EDATA_T>::refresh_prefetch_policy() {
+  auto degree_stats = compute_csr_degree_distribution(
+      reinterpret_cast<int*>(degree_list_buffer_->GetData()), size());
+  prefetch_policy_ = create_csr_prefetch_policy(degree_stats);
+}
+
+template <typename EDATA_T>
+void ImmutableCsr<EDATA_T>::Dump(Checkpoint& ckp, CheckpointManifest& meta,
+                                 const std::string& key) {
   ModuleDescriptor desc;
   desc.module_type = ModuleTypeName();
   desc.set("unsorted_since", std::to_string(unsorted_since_));
@@ -74,11 +85,8 @@ ModuleDescriptor ImmutableCsr<EDATA_T>::Dump(Checkpoint& ckp) {
   desc.set_path(ModuleDescriptor::kDegreeListPath,
                 ckp.Commit(*degree_list_buffer_));
   desc.set_path(ModuleDescriptor::kNbrListPath, ckp.Commit(*nbr_list_buffer_));
-  return desc;
+  meta.set_module(key, desc);
 }
-
-template <typename EDATA_T>
-void ImmutableCsr<EDATA_T>::reset_timestamp() {}
 
 template <typename EDATA_T>
 void ImmutableCsr<EDATA_T>::compact() {
@@ -138,6 +146,7 @@ void ImmutableCsr<EDATA_T>::resize(vid_t vnum) {
     adj_list_buffer_->Resize(vnum * sizeof(nbr_t*));
     degree_list_buffer_->Resize(vnum * sizeof(int));
   }
+  refresh_prefetch_policy();
 }
 
 template <typename EDATA_T>
@@ -218,6 +227,7 @@ void ImmutableCsr<EDATA_T>::batch_delete_vertices(
     ptr += deg_arr[i];
   }
   unsorted_since_ = 0;
+  refresh_prefetch_policy();
 }
 
 template <typename EDATA_T>
@@ -255,6 +265,7 @@ void ImmutableCsr<EDATA_T>::batch_delete_edges(
     }
   }
   unsorted_since_ = 0;
+  refresh_prefetch_policy();
 }
 
 template <typename EDATA_T>
@@ -285,6 +296,7 @@ void ImmutableCsr<EDATA_T>::batch_delete_edges(
     }
   }
   unsorted_since_ = 0;
+  refresh_prefetch_policy();
 }
 
 template <typename EDATA_T>
@@ -362,29 +374,38 @@ void ImmutableCsr<EDATA_T>::batch_put_edges(
   if (ts < unsorted_since_) {
     unsorted_since_ = 0;
   }
+  refresh_prefetch_policy();
 }
 
 template <typename EDATA_T>
 void SingleImmutableCsr<EDATA_T>::Open(Checkpoint& ckp,
                                        const ModuleDescriptor& descriptor,
                                        MemoryLevel memory_level) {
-  nbr_list_buffer_ = ckp.OpenFile(
+  nbr_list_buffer_ = std::shared_ptr<IDataContainer>(ckp.OpenFile(
       descriptor.get_path(ModuleDescriptor::kNbrListPath).value_or(""),
-      memory_level);
+      memory_level));
   edge_num_.store(std::stoull(descriptor.get("edge_num").value_or("0")));
+  refresh_prefetch_policy();
 }
 
 template <typename EDATA_T>
-ModuleDescriptor SingleImmutableCsr<EDATA_T>::Dump(Checkpoint& ckp) {
+void SingleImmutableCsr<EDATA_T>::refresh_prefetch_policy() {
+  prefetch_policy_.metadata_distance = 64;
+  prefetch_policy_.head_distance = 32;
+  prefetch_policy_.metadata_locality = 2;
+  prefetch_policy_.head_locality = 0;
+}
+
+template <typename EDATA_T>
+void SingleImmutableCsr<EDATA_T>::Dump(Checkpoint& ckp,
+                                       CheckpointManifest& meta,
+                                       const std::string& key) {
   ModuleDescriptor desc;
   desc.module_type = ModuleTypeName();
   desc.set_path(ModuleDescriptor::kNbrListPath, ckp.Commit(*nbr_list_buffer_));
   desc.set("edge_num", std::to_string(edge_num_.load()));
-  return desc;
+  meta.set_module(key, desc);
 }
-
-template <typename EDATA_T>
-void SingleImmutableCsr<EDATA_T>::reset_timestamp() {}
 
 template <typename EDATA_T>
 void SingleImmutableCsr<EDATA_T>::compact() {}

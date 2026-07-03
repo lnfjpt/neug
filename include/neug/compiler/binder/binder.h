@@ -187,10 +187,12 @@ class Binder {
       catalog::RelTableCatalogEntry* relTableEntry);
   std::unique_ptr<BoundStatement> bindCopyNodeFromNoSchema(
       const parser::Statement& statement,
-      const common::case_insensitive_map_t<common::Value>& boundCopyOptions);
+      const common::case_insensitive_map_t<common::Value>& boundCopyOptions,
+      bool temporary = false);
   std::unique_ptr<BoundStatement> bindCopyRelFromNoSchema(
       const parser::Statement& statement,
-      const common::case_insensitive_map_t<common::Value>& boundCopyOptions);
+      const common::case_insensitive_map_t<common::Value>& boundCopyOptions,
+      bool temporary = false);
 
   std::unique_ptr<BoundStatement> bindCopyToClause(
       const parser::Statement& statement);
@@ -253,6 +255,9 @@ class Binder {
   BoundTableScanInfo bindTableFunc(
       const std::string& tableFuncName, const parser::ParsedExpression& expr,
       std::vector<parser::YieldVariable> yieldVariables);
+
+  std::shared_ptr<Expression> convertParam(
+      const std::shared_ptr<Expression>& expr) const;
 
   /*** bind create macro ***/
   std::unique_ptr<BoundStatement> bindCreateMacro(
@@ -437,6 +442,9 @@ class Binder {
       std::shared_ptr<binder::Expression> inputExpr,
       const common::DataType& outDataType, const std::string& uniqueName,
       const std::string& aliasName);
+
+  static DataType getRecursiveRelLogicalType(const DataType& nodeType,
+                                             const DataType& relType);
 
  private:
   common::idx_t lastExpressionId;

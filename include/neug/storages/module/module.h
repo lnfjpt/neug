@@ -18,6 +18,7 @@
 #include <string>
 
 #include "neug/config.h"
+#include "neug/storages/checkpoint_manifest.h"
 #include "neug/storages/module_descriptor.h"
 
 namespace neug {
@@ -27,9 +28,9 @@ class Checkpoint;
 /**
  * @brief Abstract interface for persistent graph-storage modules.
  *
- * Provides three lifecycle operations: Open (restore), Dump (persist),
- * Close (release).  Dump writes to a UUID sub-directory under
- * ckp.runtime_dir().
+ * Provides four lifecycle operations: Open (restore), Dump (persist),
+ * Clone (zero-copy COW clone), and Detach (detach
+ * shared storage before mutation).
  */
 class Module {
  public:
@@ -42,9 +43,36 @@ class Module {
                     MemoryLevel level) = 0;
 
   /**
-   * @brief Persist to UUID sub-directory, return descriptor.
+   * @brief Restore module state with access to the owning manifest.
+   *
+   * Composite modules can resolve named refs through @p manifest. Simple
+   * modules keep using the descriptor-only Open implementation.
    */
-  virtual ModuleDescriptor Dump(Checkpoint& ckp) = 0;
+  virtual void Open(Checkpoint& ckp, const CheckpointManifest&,
+                    const ModuleDescriptor& descriptor, MemoryLevel level) {
+    Open(ckp, descriptor, level);
+  }
+
+  /**
+   * @brief Persist module state and write the descriptor to @p meta under
+   * @p key.
+   *
+   * Composite modules may write additional referenced module entries.
+   */
+  virtual void Dump(Checkpoint& ckp, CheckpointManifest& meta,
+                    const std::string& key) = 0;
+
+  /**
+   * @brief Create an independent module object that shares the same storage.
+   * Zero-copy: creates a new Module object sharing the same IDataContainer(s).
+   */
+  virtual std::unique_ptr<Module> Clone() const = 0;
+
+  /**
+   * @brief Detach the underlying data containers before mutation, breaking
+   * shared ownership with the parent COW clone.
+   */
+  virtual void Detach(Checkpoint& ckp, MemoryLevel level) = 0;
 
   /**
    * @brief Return factory registration key (e.g., "vertex_table").
