@@ -81,9 +81,7 @@ int EnvInt(const char* name, int fallback) {
   }
   try {
     return std::stoi(env);
-  } catch (...) {
-    return fallback;
-  }
+  } catch (...) { return fallback; }
 }
 
 void RandStr(std::mt19937& rng, char* dest, std::size_t length) {
@@ -120,8 +118,7 @@ std::filesystem::path FreshDbDir(const char* tag) {
 }
 
 void OpenAndConnect(std::unique_ptr<NeugDB>& db,
-                    std::shared_ptr<Connection>& conn,
-                    const std::string& dir) {
+                    std::shared_ptr<Connection>& conn, const std::string& dir) {
   db = std::make_unique<NeugDB>();
   ASSERT_TRUE(db->Open(MakeConfig(dir)))
       << "Failed to open NeuG database at " << dir;
@@ -147,7 +144,7 @@ void DrainResult(QueryResult& qr) {
     qr.next();
     ++rows;
   }
-  (void)rows;
+  (void) rows;
 }
 
 }  // namespace
@@ -224,9 +221,8 @@ TEST(MemoryLeakTempTableTest, RepeatedCreateDropTable) {
   for (int i = 0; i < outer_iters; ++i) {
     std::string tname = "t_" + std::to_string(i);
     {
-      std::string q =
-          "CREATE NODE TABLE " + tname +
-          " (id INT64, name STRING, PRIMARY KEY(id));";
+      std::string q = "CREATE NODE TABLE " + tname +
+                      " (id INT64, name STRING, PRIMARY KEY(id));";
       auto res = conn->Query(q, "schema");
       ASSERT_TRUE(res) << "CREATE failed at i=" << i << ": "
                        << res.error().ToString();
@@ -289,8 +285,8 @@ TEST(MemoryLeakTempTableTest, RepeatedTempTableInsertion) {
                        << res.error().ToString();
     }
     {
-      auto res = conn->Query(
-          "MATCH (s:t_src) CREATE (:t_sink {id: s.id});", "insert");
+      auto res =
+          conn->Query("MATCH (s:t_src) CREATE (:t_sink {id: s.id});", "insert");
       ASSERT_TRUE(res) << "copy-into failed at i=" << i << ": "
                        << res.error().ToString();
     }
@@ -308,9 +304,8 @@ TEST(MemoryLeakTempTableTest, RepeatedTempTableInsertion) {
 
   const auto secs =
       std::chrono::duration_cast<std::chrono::seconds>(t1 - t0).count();
-  std::printf(
-      "[memleak/temp_insert] outer=%d src_rows=%d elapsed=%llds\n",
-      outer_iters, inner_rows, static_cast<long long>(secs));
+  std::printf("[memleak/temp_insert] outer=%d src_rows=%d elapsed=%llds\n",
+              outer_iters, inner_rows, static_cast<long long>(secs));
   EXPECT_TRUE(true);
 }
 

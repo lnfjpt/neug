@@ -66,9 +66,7 @@ int EnvInt(const char* name, int fallback) {
   }
   try {
     return std::stoi(env);
-  } catch (...) {
-    return fallback;
-  }
+  } catch (...) { return fallback; }
 }
 
 void RandStr(std::mt19937& rng, char* dest, std::size_t length) {
@@ -95,8 +93,7 @@ NeugDBConfig MakeConfig(const std::string& dir) {
 }
 
 void OpenAndConnect(std::unique_ptr<NeugDB>& db,
-                    std::shared_ptr<Connection>& conn,
-                    const std::string& dir) {
+                    std::shared_ptr<Connection>& conn, const std::string& dir) {
   db = std::make_unique<NeugDB>();
   ASSERT_TRUE(db->Open(MakeConfig(dir)))
       << "Failed to open NeuG database at " << dir;
