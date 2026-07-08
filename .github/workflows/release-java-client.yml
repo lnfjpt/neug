@@ -62,7 +62,6 @@ jobs:
         working-directory: tools/java_driver
         run: |
           mvn -B deploy -DskipTests \
+              -Dgpg.skip=true \
               -Dcentral-publishing-maven-plugin.skip=true \
               -DaltDeploymentRepository=local::default::file://${{ github.workspace }}/tools/java_driver/target/staging
-        env:
-          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}

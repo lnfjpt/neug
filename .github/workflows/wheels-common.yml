@@ -122,6 +122,7 @@ jobs:
         }}
     env:
       CIBW_BUILD: ${{ needs.determine_python_versions.outputs.cibw_build }}
+      CIBW_ENVIRONMENT: "NEUG_COMMIT_SHA=${{ github.sha }}"
     steps:
       - name: checkout
         id: checkout
@@ -238,6 +239,7 @@ jobs:
         }}
     env:
       CIBW_BUILD: ${{ needs.determine_python_versions.outputs.cibw_build }}
+      CIBW_ENVIRONMENT: "NEUG_COMMIT_SHA=${{ github.sha }}"
     steps:
       - name: checkout
         id: checkout
@@ -341,6 +343,7 @@ jobs:
     if: inputs.enable_macos_x86
     env:
       CIBW_BUILD: ${{ needs.determine_python_versions.outputs.cibw_build }}
+      CIBW_ENVIRONMENT: "NEUG_COMMIT_SHA=${{ github.sha }}"
     steps:
       - name: checkout
         id: checkout
@@ -474,6 +477,7 @@ jobs:
         }}
     env:
       CIBW_BUILD: ${{ needs.determine_python_versions.outputs.cibw_build }}
+      CIBW_ENVIRONMENT: "NEUG_COMMIT_SHA=${{ github.sha }}"
     steps:
       - name: checkout
         id: checkout
