@@ -1,4 +1,4 @@
-name: Build Wheels
+name: Release Wheels
 
 on:
   workflow_dispatch:
@@ -14,7 +14,7 @@ on:
     branches:
       - main
     paths:
-      - '.github/workflows/build-wheel.yml'
+      - '.github/workflows/release-wheel.yml'
       - '.github/workflows/wheels-common.yml'
       - 'tools/python_bind/setup.py'
       - 'tools/python_bind/pyproject.toml'
