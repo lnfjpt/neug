@@ -47,21 +47,61 @@ void VertexTable::Init(std::shared_ptr<Checkpoint> ckp, MemoryLevel level) {
 
 void VertexTable::insert_vertices(
     std::shared_ptr<IDataChunkSupplier> supplier) {
-  auto pk_type_id = pk_type_.id();
-  if (pk_type_id == DataTypeId::kInt64) {
-    insert_vertices_impl<int64_t>(supplier);
-  } else if (pk_type_id == DataTypeId::kInt32) {
-    insert_vertices_impl<int32_t>(supplier);
-  } else if (pk_type_id == DataTypeId::kUInt32) {
-    insert_vertices_impl<uint32_t>(supplier);
-  } else if (pk_type_id == DataTypeId::kUInt64) {
-    insert_vertices_impl<uint64_t>(supplier);
-  } else if (pk_type_id == DataTypeId::kVarchar) {
-    insert_vertices_impl<std::string_view>(supplier);
-  } else {
-    THROW_NOT_SUPPORTED_EXCEPTION(
-        "Unsupported primary key type for vertex, type: " +
-        pk_type_.ToString() + ", label: " + vertex_schema_->label_name);
+  auto row_nums = supplier->RowNum();
+  if (row_nums < 0) {
+    VLOG(1) << "Row number from supplier is unknown, skip pre-reserve.";
+    row_nums = 0;
+  }
+  size_t new_size = indexer_->size() + row_nums;
+  if (new_size > indexer_->capacity()) {
+    size_t cap = indexer_->capacity();
+    while (new_size >= cap) {
+      cap = cap < 4096 ? 4096 : cap + cap / 4;
+    }
+    EnsureCapacity(cap);
+  }
+  while (true) {
+    auto chunk = supplier->GetNextChunk();
+    if (chunk == nullptr) {
+      break;
+    }
+    auto& columns = chunk->columns;
+    const auto& property_names = vertex_schema_->property_names;
+    CHECK(columns.size() == property_names.size() + 1)
+        << "Number of columns in the chunk (" << columns.size()
+        << ") does not match the number of properties ("
+        << property_names.size() + 1 << ").";
+    auto ind = std::get<2>(vertex_schema_->primary_keys[0]);
+    auto pk_col = columns[ind];
+
+    // Build a list of property columns excluding the PK column.
+    std::vector<std::shared_ptr<IContextColumn>> prop_cols;
+    prop_cols.reserve(columns.size() - 1);
+    for (size_t i = 0; i < columns.size(); ++i) {
+      if (static_cast<int>(i) != ind) {
+        prop_cols.push_back(columns[i]);
+      }
+    }
+
+    // Capacity check for actual batch size.
+    size_t chunk_rows = chunk->row_num();
+    size_t new_size = indexer_->size() + chunk_rows;
+    if (new_size > indexer_->capacity()) {
+      size_t cap = indexer_->capacity();
+      while (new_size >= cap) {
+        cap = cap < 4096 ? 4096 : cap + cap / 4;
+      }
+      EnsureCapacity(cap);
+    }
+
+    auto vids = insert_primary_keys(pk_col);
+
+    for (size_t i = 0; i < prop_cols.size(); ++i) {
+      auto col = table_->get_column_by_id(i);
+      set_properties_from_context_column(col, prop_cols[i], vids);
+    }
+    VLOG(10) << "Inserted " << chunk_rows
+             << " vertices, current vertex num: " << VertexNum();
   }
 }
 
@@ -89,7 +129,7 @@ void VertexTable::SetVertexSchema(
   vertex_schema_ = vertex_schema;
 }
 
-bool VertexTable::get_index(const execution::Value& oid, vid_t& lid,
+bool VertexTable::get_index(const Value& oid, vid_t& lid,
                             timestamp_t ts) const {
   auto res = indexer_->get_index(oid, lid);
   if (NEUG_UNLIKELY(res && !v_ts_->IsVertexValid(lid, ts))) {
@@ -106,8 +146,8 @@ size_t VertexTable::LidNum() const { return indexer_->size(); }
 
 vid_t internal::insert_vertex_pk_internal(IndexerType& indexer,
                                           VertexTimestamp& v_ts,
-                                          const execution::Value& id,
-                                          timestamp_t ts, bool insert_safe) {
+                                          const Value& id, timestamp_t ts,
+                                          bool insert_safe) {
   vid_t vid;
   if (NEUG_UNLIKELY(indexer.get_index(id, vid))) {
     if (NEUG_UNLIKELY(v_ts.IsVertexValid(vid, ts))) {
@@ -122,8 +162,7 @@ vid_t internal::insert_vertex_pk_internal(IndexerType& indexer,
   return vid;
 }
 
-bool VertexTable::AddVertex(const execution::Value& id,
-                            const std::vector<execution::Value>& props,
+bool VertexTable::AddVertex(const Value& id, const std::vector<Value>& props,
                             vid_t& vid, timestamp_t ts, bool insert_safe) {
   if (indexer_->capacity() <= indexer_->size()) {
     return false;
@@ -141,8 +180,7 @@ bool VertexTable::AddVertex(const execution::Value& id,
   return true;
 }
 
-bool VertexTable::UpdateProperty(vid_t vid, int32_t prop_id,
-                                 const execution::Value& value,
+bool VertexTable::UpdateProperty(vid_t vid, int32_t prop_id, const Value& value,
                                  timestamp_t ts) {
   if (NEUG_UNLIKELY(vid >= indexer_->size())) {
     LOG(ERROR) << "Lid " << vid << " is out of range.";
@@ -161,7 +199,7 @@ bool VertexTable::UpdateProperty(vid_t vid, int32_t prop_id,
   return true;
 }
 
-execution::Value VertexTable::GetOid(vid_t lid, timestamp_t ts) const {
+Value VertexTable::GetOid(vid_t lid, timestamp_t ts) const {
   if (NEUG_UNLIKELY(lid >= indexer_->size())) {
     THROW_INVALID_ARGUMENT_EXCEPTION("Lid " + std::to_string(lid) +
                                      " is out of range.");
@@ -203,7 +241,7 @@ void VertexTable::BatchDeleteVertices(const std::vector<vid_t>& vids) {
   VLOG(10) << "Deleted " << delete_cnt << " vertices in batch.";
 }
 
-void VertexTable::DeleteVertex(const execution::Value& id, timestamp_t ts) {
+void VertexTable::DeleteVertex(const Value& id, timestamp_t ts) {
   vid_t vid;
   if (!get_index(id, vid, ts)) {
     LOG(WARNING) << "Vertex with id " << id.to_string() << " not found.";
@@ -239,10 +277,10 @@ void VertexTable::DeleteProperties(const std::vector<std::string>& properties) {
   }
 }
 
-void VertexTable::AddProperties(
-    Checkpoint& ckp, const std::vector<std::string>& properties,
-    const std::vector<DataType>& types,
-    const std::vector<execution::Value>& default_values) {
+void VertexTable::AddProperties(Checkpoint& ckp,
+                                const std::vector<std::string>& properties,
+                                const std::vector<DataType>& types,
+                                const std::vector<Value>& default_values) {
   table_->add_columns(ckp, properties, types, default_values,
                       indexer_->capacity(), memory_level_);
 }
@@ -260,7 +298,7 @@ void VertexTable::Compact(timestamp_t ts) {
   // TODO(zhanglei): Support compact unused lid in indexer_ and table
 }
 
-vid_t VertexTable::insert_vertex_pk(const execution::Value& id, timestamp_t ts,
+vid_t VertexTable::insert_vertex_pk(const Value& id, timestamp_t ts,
                                     bool insert_safe) {
   return internal::insert_vertex_pk_internal(*indexer_, *v_ts_, id, ts,
                                              insert_safe);

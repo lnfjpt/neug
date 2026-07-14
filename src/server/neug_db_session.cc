@@ -42,6 +42,7 @@
 #include "neug/main/query_request.h"
 #include "neug/main/query_result.h"
 #include "neug/storages/graph/graph_interface.h"
+#include "neug/storages/graph/graph_stats.h"
 #include "neug/storages/graph/property_graph.h"
 #include "neug/storages/graph/schema.h"
 #include "neug/transaction/compact_transaction.h"
@@ -79,34 +80,22 @@ neug::UpdateTransaction NeugDBSession::GetUpdateTransaction() {
                                  pipeline_cache_, ts);
 }
 
-inline bool is_read_only(const physical::ExecutionFlag flags) {
-  return !(flags.insert() || flags.update() || flags.schema() ||
-           flags.batch() || flags.create_temp_table() || flags.checkpoint() ||
-           flags.procedure_call());
-}
-
-inline bool is_insert_only(const physical::ExecutionFlag flags) {
-  return flags.insert() && !(flags.read() || flags.update() || flags.schema() ||
-                             flags.batch() || flags.create_temp_table() ||
-                             flags.checkpoint() || flags.procedure_call());
-}
-
 Status validate_flags(AccessMode mode, const physical::ExecutionFlag& flags,
                       const NeugDBConfig& db_config) {
   if (db_config.mode == DBMode::READ_ONLY) {
-    if (!is_read_only(flags) || mode != AccessMode::kRead) {
+    if (!IsReadOnlyExecutionFlag(flags) || mode != AccessMode::kRead) {
       return neug::Status(
           neug::StatusCode::ERR_INVALID_ARGUMENT,
           "Database is in read-only mode; write operations are not allowed.");
     }
   }
   if (mode == neug::AccessMode::kRead) {
-    if (!is_read_only(flags)) {
+    if (!IsReadOnlyExecutionFlag(flags)) {
       return neug::Status(neug::StatusCode::ERR_INVALID_ARGUMENT,
                           "Read-only mode does not support write operations.");
     }
   } else if (mode == neug::AccessMode::kInsert) {
-    if (!is_insert_only(flags)) {
+    if (!IsInsertOnlyExecutionFlag(flags)) {
       return neug::Status(
           neug::StatusCode::ERR_INVALID_ARGUMENT,
           "Insert-only mode does not support read or update operations.");
@@ -122,21 +111,51 @@ Status validate_flags(AccessMode mode, const physical::ExecutionFlag& flags,
 
 template <typename Transaction>
 inline neug::result<execution::Context> ExecutePipelineInTransaction(
-    execution::LocalQueryCache& pipeline_cache, const Schema& schema,
+    execution::LocalQueryCache& pipeline_cache, const GraphStats& stats,
     const std::string& query, AccessMode mode, const NeugDBConfig& db_config,
-    const rapidjson::Document& param_json_obj, execution::OprTimer* timer,
-    neug::MetaDatas& result_schema, Transaction& txn,
-    IStorageInterface& storage_interface) {
-  GS_AUTO(cache_value, pipeline_cache.Get(schema, query));
+    const rapidjson::Document& param_json_obj, neug::MetaDatas& result_schema,
+    Transaction& txn, IStorageInterface& storage_interface,
+    neug::QueryResponse* response) {
+  GS_AUTO(cache_value, pipeline_cache.Get(stats, query));
   assert(cache_value != nullptr);
   RETURN_STATUS_ERROR_IF_NOT_OK(
       validate_flags(mode, cache_value->flags, db_config));
 
+  result_schema = cache_value->result_schema;
   auto params_map =
       ParamsParser::ParseFromJsonObj(cache_value->params_type, param_json_obj);
+  const auto explain_mode = cache_value->explain_mode;
+
+  // ================ EXPLAIN MODE =================
+  // Build the operator tree only; the query is not executed.
+  if (explain_mode == physical::ExplainMode::EXPLAIN) {
+    auto tree_result =
+        cache_value->pipeline.explain_tree(storage_interface, params_map);
+    if (!tree_result) {
+      txn.Abort();
+      RETURN_ERROR(tree_result.error());
+    }
+    if (tree_result.value()) {
+      *response->mutable_profile_result() =
+          execution::OprTimer::ToProfileResult(tree_result.value().get());
+    }
+    response->set_row_count(0);
+    if (!txn.Commit()) {
+      LOG(ERROR) << "transaction commit failed.";
+      RETURN_ERROR(neug::Status::InternalError("Transaction commit failed."));
+    }
+    // Empty context: no data rows are produced for EXPLAIN.
+    return execution::Context();
+  }
+
+  // ================ NORMAL / PROFILE EXECUTION =================
+  std::unique_ptr<execution::OprTimer> timer_ptr = nullptr;
+  if (explain_mode == physical::ExplainMode::PROFILE) {
+    timer_ptr = std::make_unique<execution::OprTimer>();
+  }
+
   auto ctx_res = cache_value->pipeline.Execute(
-      storage_interface, execution::Context(), params_map, timer);
-  result_schema = cache_value->result_schema;
+      storage_interface, execution::Context(), params_map, timer_ptr.get());
   if (!ctx_res) {
     txn.Abort();
     RETURN_ERROR(ctx_res.error());
@@ -144,6 +163,11 @@ inline neug::result<execution::Context> ExecutePipelineInTransaction(
   if (!txn.Commit()) {
     LOG(ERROR) << "transaction commit failed.";
     RETURN_ERROR(neug::Status::InternalError("Transaction commit failed."));
+  }
+
+  if (explain_mode == physical::ExplainMode::PROFILE && timer_ptr) {
+    *response->mutable_profile_result() =
+        execution::OprTimer::ToProfileResult(timer_ptr.get());
   }
   return ctx_res;
 }
@@ -160,11 +184,14 @@ neug::result<std::string> NeugDBSession::Eval(const std::string& req) {
     RETURN_ERROR(parse_res);
   }
   if (mode == AccessMode::kUnKnown) {
+    // Token-based analyzeMode still treats "call" as update. Read-only CALL is
+    // only accepted on the read path when access_mode=read is set explicitly.
     mode = planner_->analyzeMode(query);
   }
+  // Explicit access_mode=read: GPhysicalAnalyzer sets flag.read (not
+  // procedure_call) when Function::isReadOnly is true, so validate_flags()
+  // accepts those plans on the read path.
 
-  // Acquire different transaction on provided access_mode.;
-  std::unique_ptr<neug::execution::OprTimer> timer = nullptr;
   google::protobuf::Arena arena;
   // Create a QueryResponse message on the arena to hold the results.
   neug::QueryResponse* response =
@@ -176,26 +203,26 @@ neug::result<std::string> NeugDBSession::Eval(const std::string& req) {
     neug::StorageReadInterface gri(read_txn.view(), read_txn.timestamp());
     GS_AUTO(ctx,
             ExecutePipelineInTransaction(
-                pipeline_cache_, read_txn.schema(), query, mode, db_config_,
-                param_json_obj, timer.get(), result_schema, read_txn, gri));
+                pipeline_cache_, read_txn.statistic(), query, mode, db_config_,
+                param_json_obj, result_schema, read_txn, gri, response));
     response->mutable_schema()->CopyFrom(result_schema);
     neug::execution::Sink::sink_results(ctx, gri, response);
   } else if (mode == AccessMode::kInsert) {
     auto insert_txn = GetInsertTransaction();
     neug::StorageTPInsertInterface gii(insert_txn);
-    GS_AUTO(ctx,
-            ExecutePipelineInTransaction(
-                pipeline_cache_, insert_txn.schema(), query, mode, db_config_,
-                param_json_obj, timer.get(), result_schema, insert_txn, gii));
+    GS_AUTO(ctx, ExecutePipelineInTransaction(
+                     pipeline_cache_, insert_txn.statistic(), query, mode,
+                     db_config_, param_json_obj, result_schema, insert_txn, gii,
+                     response));
   } else if (mode == AccessMode::kUpdate ||
              mode == AccessMode::kSchema) {  // Update mode
     CHECK(planner_ != nullptr);
     auto update_txn = GetUpdateTransaction();
     neug::StorageTPUpdateInterface gui(update_txn);
-    GS_AUTO(ctx,
-            ExecutePipelineInTransaction(
-                pipeline_cache_, update_txn.schema(), query, mode, db_config_,
-                param_json_obj, timer.get(), result_schema, update_txn, gui));
+    GS_AUTO(ctx, ExecutePipelineInTransaction(
+                     pipeline_cache_, update_txn.statistic(), query, mode,
+                     db_config_, param_json_obj, result_schema, update_txn, gui,
+                     response));
     response->mutable_schema()->CopyFrom(result_schema);
     neug::execution::Sink::sink_results(ctx, gui, response);
   } else {

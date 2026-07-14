@@ -20,11 +20,11 @@ const assert = require('assert').strict;
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { Database } = require('../lib');
 const {
+  Database,
   ERR_CONFIG_INVALID,
   ERR_CONNECTION_CLOSED,
-} = require('../lib/error-codes');
+} = require('neug');
 
 // ---------------------------------------------------------------------------
 // Helpers (mirrors Python tmp_path fixture)
@@ -179,8 +179,22 @@ test('test_access_mode', () => {
   const db = new Database({ databasePath: dbDir, mode: 'w' });
   const connRw = db.connect();
 
-  const supportedAccessModes = ['read', 'r', 'insert', 'i', 'update', 'u'];
-  for (const mode of supportedAccessModes) {
+  // Explicit read rejects writes; a read query is allowed.
+  for (const mode of ['read', 'r']) {
+    connRw.execute('MATCH (n) RETURN count(n);', mode);
+    assert.throws(
+      () => {
+        connRw.execute(
+          `CREATE NODE TABLE test_table_${mode}(id INT64, PRIMARY KEY(id));`,
+          mode
+        );
+      },
+      (err) =>
+        err.message.includes('Write queries are not supported in read-only mode')
+    );
+  }
+
+  for (const mode of ['insert', 'i', 'update', 'u']) {
     connRw.execute(
       `CREATE NODE TABLE test_table_${mode}(id INT64, PRIMARY KEY(id));`,
       mode

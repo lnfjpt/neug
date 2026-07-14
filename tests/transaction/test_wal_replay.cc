@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-#include "neug/execution/common/types/value.h"
+#include "neug/common/types/value.h"
 #include "neug/neug.h"
 #include "neug/server/neug_db_service.h"
 #include "neug/storages/graph/graph_interface.h"
@@ -30,7 +30,7 @@
 
 namespace {
 
-using neug::execution::Value;
+using neug::Value;
 
 std::string make_test_dir() {
   const auto* info = ::testing::UnitTest::GetInstance()->current_test_info();
@@ -43,7 +43,6 @@ std::string make_test_dir() {
 neug::NeugDBConfig make_config(const std::string& db_dir) {
   neug::NeugDBConfig config(db_dir, 1);
   config.memory_level = neug::MemoryLevel::kInMemory;
-  config.enable_auto_compaction = false;
   config.checkpoint_on_close = false;
   config.checkpoint_on_recovery = false;
   return config;
