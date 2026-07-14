@@ -60,7 +60,7 @@ jobs:
   # ============================================================
   build_and_test_linux_x86_64:
     needs: format_check
-    if: ${{ (needs.format_check.result == 'success' || needs.format_check.result == 'skipped') && (github.event_name != 'push' || github.repository != 'alibaba/neug' || github.ref == 'refs/heads/main') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'release') }}
+    if: ${{ (needs.format_check.result == 'success' || needs.format_check.result == 'skipped') && (github.event_name != 'push' || github.repository != 'alibaba/neug' || github.ref == 'refs/heads/main') && contains(fromJSON('["push", "workflow_dispatch", "release"]'), github.event_name) }}
     uses: ./.github/workflows/build-and-test-common.yml
     with:
       runs-on: ${{ github.repository == 'alibaba/neug' && '["self-hosted", "daily", "linux", "x64"]' || '["ubuntu-22.04"]' }}
@@ -73,7 +73,7 @@ jobs:
 
   build_and_test_linux_arm64:
     needs: format_check
-    if: ${{ (needs.format_check.result == 'success' || needs.format_check.result == 'skipped') && (github.event_name != 'push' || github.repository != 'alibaba/neug' || github.ref == 'refs/heads/main') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'release') }}
+    if: ${{ (needs.format_check.result == 'success' || needs.format_check.result == 'skipped') && (github.event_name != 'push' || github.repository != 'alibaba/neug' || github.ref == 'refs/heads/main') && contains(fromJSON('["push", "workflow_dispatch", "release"]'), github.event_name) }}
     uses: ./.github/workflows/build-and-test-common.yml
     with:
       runs-on: ${{ github.repository == 'alibaba/neug' && '["self-hosted", "daily", "linux", "arm64"]' || '["ubuntu-22.04-arm"]' }}
