@@ -70,7 +70,8 @@ void NeugDBService::init(const ServiceConfig& config) {
   hdl_mgr_ = std::make_unique<BrpcServiceManager>(db_, *execution_slot_pool_);
   hdl_mgr_->Init(config);
 #else
-  hdl_mgr_ = std::make_unique<HttplibServiceManager>(db_, *execution_slot_pool_);
+  hdl_mgr_ =
+      std::make_unique<HttplibServiceManager>(db_, *execution_slot_pool_);
   hdl_mgr_->Init(config);
 #endif
   service_config_ = config;
