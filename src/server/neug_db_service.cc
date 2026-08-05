@@ -18,9 +18,13 @@
 
 #include <algorithm>
 
+#ifndef _WIN32
 #include <bthread/bthread.h>
 
 #include "neug/server/brpc_service_mgr.h"
+#else
+#include "neug/server/httplib_service_mgr.h"
+#endif
 
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
@@ -52,16 +56,23 @@ void NeugDBService::init(const ServiceConfig& config) {
         std::to_string(db_config_.max_thread_num) + ".");
   }
 
+#ifndef _WIN32
   bthread_setconcurrency(
       std::max(db_config_.max_thread_num, BTHREAD_MIN_CONCURRENCY));
+#endif
 
   execution_slot_pool_ = std::make_unique<neug::TpExecutionSlotPool>(
       db_.graph_snapshot_store(), db_.GetPlanner(), db_.GetQueryCache(),
       *db_.version_manager_, db_.allocators_,
       db_.graph().checkpoint().wal_dir(), db_config_);
 
+#ifndef _WIN32
   hdl_mgr_ = std::make_unique<BrpcServiceManager>(db_, *execution_slot_pool_);
   hdl_mgr_->Init(config);
+#else
+  hdl_mgr_ = std::make_unique<HttplibServiceManager>(db_, *execution_slot_pool_);
+  hdl_mgr_->Init(config);
+#endif
   service_config_ = config;
 }
 
