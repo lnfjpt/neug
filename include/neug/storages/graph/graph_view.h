@@ -117,9 +117,9 @@ class GraphView {
   ~GraphView() = default;
 
   GraphView(const GraphView&) = default;
-  GraphView(GraphView&&) = default;
+  GraphView(GraphView&&) noexcept = default;
   GraphView& operator=(const GraphView&) = default;
-  GraphView& operator=(GraphView&&) = default;
+  GraphView& operator=(GraphView&&) noexcept = default;
 
   const Schema& schema() const { return *schema_; }
   result<StorageIndex*> GetIndexByName(const std::string& name) const;
