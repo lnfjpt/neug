@@ -148,13 +148,31 @@ jobs:
             -DPYTHON_EXECUTABLE="$pythonExe" `
             .
 
-      - name: Build
+      # Split the build into core libraries and C++ tests. This lets Ninja
+      # skip the already-built neug/neug_py_bind DLLs when only test code
+      # changed and the build directory cache is restored.
+      - name: Build core libraries
         run: |
           $cpuCount = [Environment]::ProcessorCount
           $jobs = [Math]::Min($cpuCount, 8)
-          Write-Host "Building with $jobs parallel jobs"
+          Write-Host "Building core libraries with $jobs parallel jobs"
           sccache --zero-stats
-          cmake --build build -j $jobs
+          cmake --build build -j $jobs --target neug neug_py_bind
+
+      - name: Build C++ tests
+        run: |
+          $cpuCount = [Environment]::ProcessorCount
+          $jobs = [Math]::Min($cpuCount, 8)
+          Write-Host "Building C++ tests with $jobs parallel jobs"
+          cmake --build build -j $jobs --target `
+            transaction_test `
+            graph_view_test `
+            execution_test `
+            test_vertex_table `
+            test_mmap_container `
+            logical_delete_test `
+            test_request `
+            sink_test
           sccache --show-stats
 
       # ========================================

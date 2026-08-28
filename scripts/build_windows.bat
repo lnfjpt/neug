@@ -35,3 +35,6 @@ if %ERRORLEVEL% == 0 (
 
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static-md -DOPENSSL_ROOT_DIR="%VCPKG_ROOT%\installed\x64-windows-static-md" -DBUILD_PYTHON=ON -DBUILD_EXAMPLES=OFF %COMPILER_LAUNCHER_ARGS% -DPython_EXECUTABLE="%PYTHON_EXE%" -DPYTHON_EXECUTABLE="%PYTHON_EXE%" .
 cmake --build build -j 8 --target neug neug_py_bind
+
+REM To rebuild only specific C++ tests after the core DLL is compiled, run:
+REM   cmake --build build -j 8 --target transaction_test graph_view_test execution_test test_vertex_table test_mmap_container logical_delete_test test_request sink_test
