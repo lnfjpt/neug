@@ -75,6 +75,26 @@ jobs:
           python -m pip install -r tools/python_bind/requirements.txt
           python -m pip install pytest pytest-cov coverage
 
+      # sccache accelerates MSVC builds by caching object files in GitHub
+      # Actions cache. It is compatible with Ninja and the MSVC toolchain.
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+        with:
+          version: "v0.10.0"
+
+      # Cache the CMake build tree for incremental rebuilds. Ninja's build
+      # log and dependency database allow it to skip unchanged targets when
+      # the build directory is restored.
+      - name: Cache build directory
+        uses: actions/cache@v4
+        with:
+          path: build
+          key: ${{ runner.os }}-${{ runner.arch }}-neug-build-${{ github.ref_name }}-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'src/**', 'include/**', 'proto/**') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-neug-build-${{ github.ref_name }}-
+            ${{ runner.os }}-${{ runner.arch }}-neug-build-main-
+            ${{ runner.os }}-${{ runner.arch }}-neug-build-
+
       # vcpkg is pre-installed on GitHub-hosted Windows runners at C:\vcpkg
       # but ships with NO pre-built packages. In classic mode (no vcpkg.json)
       # the toolchain does not auto-install missing packages, so we must
@@ -121,6 +141,9 @@ jobs:
             -DVCPKG_TARGET_TRIPLET=x64-windows-static-md `
             -DBUILD_PYTHON=ON `
             -DBUILD_TEST=ON `
+            -DBUILD_EXAMPLES=OFF `
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache `
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache `
             -DPython_EXECUTABLE="$pythonExe" `
             -DPYTHON_EXECUTABLE="$pythonExe" `
             .
@@ -130,7 +153,9 @@ jobs:
           $cpuCount = [Environment]::ProcessorCount
           $jobs = [Math]::Min($cpuCount, 8)
           Write-Host "Building with $jobs parallel jobs"
+          sccache --zero-stats
           cmake --build build -j $jobs
+          sccache --show-stats
 
       # ========================================
       # Phase 1: C++ Tests (ctest)
