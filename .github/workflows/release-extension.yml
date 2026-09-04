@@ -112,9 +112,9 @@ jobs:
           # Build and package only; distribution happens via the GitHub artifacts below.
           ./scripts/build_and_upload_extensions.sh \
             --platform linux_x86_64 \
-            --version "${{ needs.prepare.outputs.version }}" \
-            --extensions "${{ needs.prepare.outputs.extensions }}" \
-            --skip-upload
+            --skip-upload \
+            --version ${{ needs.prepare.outputs.version }} \
+            --extensions ${{ needs.prepare.outputs.extensions }} 
 
       - name: Upload extension packages as artifacts
         uses: actions/upload-artifact@v4
@@ -190,9 +190,9 @@ jobs:
           # Build and package only; distribution happens via the GitHub artifacts below.
           ./scripts/build_and_upload_extensions.sh \
             --platform linux_arm64 \
-            --version "${{ needs.prepare.outputs.version }}" \
-            --extensions "${{ needs.prepare.outputs.extensions }}" \
-            --skip-upload
+            --skip-upload \
+            --version ${{ needs.prepare.outputs.version }} \
+            --extensions ${{ needs.prepare.outputs.extensions }} 
 
       - name: Upload extension packages as artifacts
         uses: actions/upload-artifact@v4
@@ -241,9 +241,9 @@ jobs:
           # Build and package only; distribution happens via the GitHub artifacts below.
           ./scripts/build_and_upload_extensions.sh \
             --platform osx_x86_64 \
-            --version "${{ needs.prepare.outputs.version }}" \
-            --extensions "${{ needs.prepare.outputs.extensions }}" \
-            --skip-upload
+            --skip-upload \
+            --version ${{ needs.prepare.outputs.version }} \
+            --extensions ${{ needs.prepare.outputs.extensions }}
 
       - name: Upload extension packages as artifacts
         uses: actions/upload-artifact@v4
@@ -292,9 +292,9 @@ jobs:
           # Build and package only; distribution happens via the GitHub artifacts below.
           ./scripts/build_and_upload_extensions.sh \
             --platform osx_arm64 \
-            --version "${{ needs.prepare.outputs.version }}" \
-            --extensions "${{ needs.prepare.outputs.extensions }}" \
-            --skip-upload
+            --skip-upload \
+            --version ${{ needs.prepare.outputs.version }} \
+            --extensions ${{ needs.prepare.outputs.extensions }}
 
       - name: Upload extension packages as artifacts
         uses: actions/upload-artifact@v4
