@@ -109,10 +109,12 @@ jobs:
         run: |
           . /home/neug/.neug_env
           cd ${GITHUB_WORKSPACE}/
+          # Build and package only; distribution happens via the GitHub artifacts below.
           ./scripts/build_and_upload_extensions.sh \
             --platform linux_x86_64 \
-            --version ${{ needs.prepare.outputs.version }} \
-            --extensions ${{ needs.prepare.outputs.extensions }}
+            --version "${{ needs.prepare.outputs.version }}" \
+            --extensions "${{ needs.prepare.outputs.extensions }}" \
+            --skip-upload
 
       - name: Upload extension packages as artifacts
         uses: actions/upload-artifact@v4
@@ -185,10 +187,12 @@ jobs:
         run: |
           . /home/neug/.neug_env
           cd ${GITHUB_WORKSPACE}
+          # Build and package only; distribution happens via the GitHub artifacts below.
           ./scripts/build_and_upload_extensions.sh \
             --platform linux_arm64 \
-            --version ${{ needs.prepare.outputs.version }} \
-            --extensions ${{ needs.prepare.outputs.extensions }}
+            --version "${{ needs.prepare.outputs.version }}" \
+            --extensions "${{ needs.prepare.outputs.extensions }}" \
+            --skip-upload
 
       - name: Upload extension packages as artifacts
         uses: actions/upload-artifact@v4
@@ -234,10 +238,12 @@ jobs:
         run: |
           source ~/.neug_env
           cd ${GITHUB_WORKSPACE}
+          # Build and package only; distribution happens via the GitHub artifacts below.
           ./scripts/build_and_upload_extensions.sh \
             --platform osx_x86_64 \
-            --version ${{ needs.prepare.outputs.version }} \
-            --extensions ${{ needs.prepare.outputs.extensions }}
+            --version "${{ needs.prepare.outputs.version }}" \
+            --extensions "${{ needs.prepare.outputs.extensions }}" \
+            --skip-upload
 
       - name: Upload extension packages as artifacts
         uses: actions/upload-artifact@v4
@@ -283,10 +289,12 @@ jobs:
         run: |
           source ~/.neug_env
           cd ${GITHUB_WORKSPACE}
+          # Build and package only; distribution happens via the GitHub artifacts below.
           ./scripts/build_and_upload_extensions.sh \
             --platform osx_arm64 \
-            --version ${{ needs.prepare.outputs.version }} \
-            --extensions ${{ needs.prepare.outputs.extensions }}
+            --version "${{ needs.prepare.outputs.version }}" \
+            --extensions "${{ needs.prepare.outputs.extensions }}" \
+            --skip-upload
 
       - name: Upload extension packages as artifacts
         uses: actions/upload-artifact@v4
