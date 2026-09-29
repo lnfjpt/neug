@@ -161,6 +161,30 @@ std::unique_ptr<BindedExprBase> SingleRelationshipPathExpr::bind(
       end_expr_->bind(storage, params));
 }
 
+// Rebuild `path` in the opposite traversal direction. Edge directions are
+// flipped so Path::relationships() keeps reporting storage-order src/dst
+// for every edge after the reversal.
+static Path reverse_path(const Path& path) {
+  auto vertices = path.nodes();
+  auto edges = path.relationships();
+  if (vertices.empty() || vertices.size() != edges.size() + 1) {
+    return path;
+  }
+  std::reverse(vertices.begin(), vertices.end());
+  std::vector<std::tuple<label_t, Direction, const void*>> edge_datas;
+  edge_datas.reserve(edges.size());
+  for (const auto& edge : edges) {
+    Direction flipped = edge.dir;
+    if (edge.dir == Direction::kOut) {
+      flipped = Direction::kIn;
+    } else if (edge.dir == Direction::kIn) {
+      flipped = Direction::kOut;
+    }
+    edge_datas.emplace_back(edge.label.edge_label, flipped, edge.prop);
+  }
+  return Path(edge_datas, vertices);
+}
+
 class BindedPathConcatExpr : public RecordExprBase {
  public:
   explicit BindedPathConcatExpr(
@@ -184,13 +208,39 @@ class BindedPathConcatExpr : public RecordExprBase {
         return Value(type_);
       }
 
-      const auto& path = PathValue::Get(path_val);
-      auto vertices = path.nodes();
-      if (vertices.empty() || !(result.end_node() == vertices.front())) {
+      auto next = PathValue::Get(path_val);
+      auto vertices = next.nodes();
+      if (vertices.empty()) {
         THROW_INVALID_ARGUMENT_EXCEPTION(
             "Cannot concatenate paths with different boundary vertices");
       }
-      auto edges = path.relationships();
+      if (!(result.end_node() == vertices.front())) {
+        // The engine may expand a segment from the pattern's other endpoint
+        // (the planner can bind either end of an undirected var-length
+        // relationship), which yields that segment in reverse traversal
+        // order. Re-align the boundaries so the concatenated path always
+        // follows the query's written direction.
+        auto result_nodes = result.nodes();
+        if (result.end_node() == vertices.back()) {
+          // `next` is reversed; flip it back.
+          next = reverse_path(next);
+          vertices = next.nodes();
+        } else if (path_idx == 1 && !result_nodes.empty() &&
+                   result_nodes.front() == vertices.front()) {
+          // The first segment is reversed; flip it back.
+          result = reverse_path(result);
+        } else if (path_idx == 1 && !result_nodes.empty() &&
+                   result_nodes.front() == vertices.back()) {
+          // Both the first segment and `next` are reversed.
+          result = reverse_path(result);
+          next = reverse_path(next);
+          vertices = next.nodes();
+        } else {
+          THROW_INVALID_ARGUMENT_EXCEPTION(
+              "Cannot concatenate paths with different boundary vertices");
+        }
+      }
+      auto edges = next.relationships();
       for (size_t i = 0; i < edges.size(); ++i) {
         const auto& edge = edges[i];
         const auto& vertex = vertices[i + 1];
