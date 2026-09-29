@@ -208,6 +208,12 @@ class CMakeBuild(build_ext):
         cmake_args = [
             f"-DPython_EXECUTABLE={sys.executable}",
             f"-DPYTHON_EXECUTABLE={sys.executable}",
+            # Pin the FindPython search root to the interpreter we build for.
+            # cibuildwheel reuses <repo>/build across CPython versions; without
+            # this, the Python_ROOT_DIR cached by the previous version's
+            # configure keeps FindPython looking for pythonXY.lib under the
+            # old installation, failing with "missing: Development.Module".
+            f"-DPython_ROOT_DIR={sys.base_prefix}",
             f"-DCMAKE_BUILD_TYPE={build_type}",
             "-DBUILD_PYTHON=ON",
             "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
