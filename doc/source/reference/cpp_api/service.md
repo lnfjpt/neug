@@ -7,6 +7,8 @@ NeuG database service facade for remote TP workloads.
 `NeugDBService` coordinates a TP runtime and an `IServiceTransport`. The default transport uses BRPC to expose HTTP endpoints; query execution and transaction ownership remain in the runtime, independently of the network handlers.
 This is the C++ equivalent of Python's `Database.serve()` functionality, designed for high-throughput Transaction Processing (TP) scenarios where multiple clients need concurrent access to the database.
 
+> **Platform note:** The HTTP server component is not built on Windows (`BUILD_HTTP_SERVER` is disabled for Windows builds), so `NeugDBService` is unavailable there. Run the service on Linux or macOS (or under WSL) instead.
+
 **Usage Example:** 
 ```cpp
 #include <neug/main/neug_db.h>
