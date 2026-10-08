@@ -16,33 +16,16 @@ if(NOT EXISTS "${CMAKE_SOURCE_DIR}/third_party/cppjieba/include/cppjieba/Jieba.h
         "--recursive third_party/cppjieba")
 endif()
 
-set(NEUG_CPPJIEBA_PATCH "${CMAKE_SOURCE_DIR}/third_party/cppjieba.patch")
-# --ignore-whitespace keeps the patch applicable on Windows, where a
-# core.autocrlf checkout rewrites either the .patch file or the submodule
-# sources to CRLF; it is a no-op on LF-only checkouts (Linux/macOS).
-execute_process(
-    COMMAND git apply --ignore-whitespace --check "${NEUG_CPPJIEBA_PATCH}"
-    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/third_party/cppjieba"
-    RESULT_VARIABLE NEUG_CPPJIEBA_PATCH_CHECK
-    OUTPUT_QUIET ERROR_QUIET)
-if(NEUG_CPPJIEBA_PATCH_CHECK EQUAL 0)
-    execute_process(
-        COMMAND git apply --ignore-whitespace "${NEUG_CPPJIEBA_PATCH}"
-        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/third_party/cppjieba"
-        RESULT_VARIABLE NEUG_CPPJIEBA_PATCH_RESULT)
-    if(NOT NEUG_CPPJIEBA_PATCH_RESULT EQUAL 0)
-        message(FATAL_ERROR "Failed to apply cppjieba.patch")
-    endif()
-else()
-    execute_process(
-        COMMAND git apply --reverse --ignore-whitespace --check "${NEUG_CPPJIEBA_PATCH}"
-        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/third_party/cppjieba"
-        RESULT_VARIABLE NEUG_CPPJIEBA_PATCH_APPLIED
-        OUTPUT_QUIET ERROR_QUIET)
-    if(NOT NEUG_CPPJIEBA_PATCH_APPLIED EQUAL 0)
-        message(FATAL_ERROR "cppjieba.patch does not apply cleanly")
-    endif()
-endif()
+# The shared helper applies an LF-normalized copy of the patch: a
+# core.autocrlf checkout on Windows rewrites cppjieba.patch (a file in the
+# main repo) to CRLF, and git apply rejects CRLF patches with "corrupt
+# patch" before --ignore-whitespace ever comes into play. On failure it
+# reports the captured git output instead of hiding it.
+include(${CMAKE_SOURCE_DIR}/cmake/NeugPatchUtils.cmake)
+_neug_apply_patch(
+    "${CMAKE_SOURCE_DIR}/third_party/cppjieba"
+    "${CMAKE_SOURCE_DIR}/third_party/cppjieba.patch"
+    "cppjieba.patch")
 
 if(NOT TARGET neug_cppjieba)
     add_library(neug_cppjieba INTERFACE)
