@@ -137,8 +137,14 @@ function(build_zvec_as_third_party)
     set(_zvec_binary_dir "${CMAKE_BINARY_DIR}/third_party/zvec-build")
     set(_zvec_roaring_include_dir
         "${ZVEC_SOURCE_DIR}/thirdparty/CRoaring/CRoaring-2.0.4")
-    set(_zvec_roaring_library
-        "${_zvec_binary_dir}/external/usr/local/lib/libroaring.a")
+    # MSVC static libraries carry no "lib" prefix and use the .lib suffix.
+    if(WIN32)
+        set(_zvec_roaring_library
+            "${_zvec_binary_dir}/external/usr/local/lib/roaring.lib")
+    else()
+        set(_zvec_roaring_library
+            "${_zvec_binary_dir}/external/usr/local/lib/libroaring.a")
+    endif()
     if(APPLE)
         execute_process(
             COMMAND sysctl -n hw.physicalcpu
@@ -152,9 +158,16 @@ function(build_zvec_as_third_party)
         set(_zvec_parallel_jobs 1)
     endif()
 
-    set(_zvec_core_library "${_zvec_binary_dir}/lib/libzvec_core.a")
-    set(_zvec_ailego_library "${_zvec_binary_dir}/lib/libzvec_ailego.a")
-    set(_zvec_turbo_library "${_zvec_binary_dir}/lib/libzvec_turbo.a")
+    # MSVC static libraries carry no "lib" prefix and use the .lib suffix.
+    if(WIN32)
+        set(_zvec_core_library "${_zvec_binary_dir}/lib/zvec_core.lib")
+        set(_zvec_ailego_library "${_zvec_binary_dir}/lib/zvec_ailego.lib")
+        set(_zvec_turbo_library "${_zvec_binary_dir}/lib/zvec_turbo.lib")
+    else()
+        set(_zvec_core_library "${_zvec_binary_dir}/lib/libzvec_core.a")
+        set(_zvec_ailego_library "${_zvec_binary_dir}/lib/libzvec_ailego.a")
+        set(_zvec_turbo_library "${_zvec_binary_dir}/lib/libzvec_turbo.a")
+    endif()
 
     # ZVec currently creates several common third-party targets unconditionally.
     # Build it in an isolated CMake project to avoid collisions with NeuG targets.

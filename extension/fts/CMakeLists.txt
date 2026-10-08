@@ -61,7 +61,9 @@ target_link_libraries(neug_fts_extension PRIVATE
     ${Protobuf_LIBRARIES})
 add_dependencies(neug_fts_extension neug_sqlite3_amalgamation)
 
-if(BUILD_TEST)
+# The C++ test suite is not built on Windows (consistent with the Windows CI
+# test policy; the test also relies on POSIX-only headers).
+if(BUILD_TEST AND NOT WIN32)
     add_extension_test(
         NAME fts
         TEST_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/tests/fts_extension_test.cc"
