@@ -370,6 +370,17 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
+      # GitHub-hosted Windows runners default to core.autocrlf=true, so the
+      # cppjieba submodule is checked out with CRLF line endings and the
+      # LF-only cppjieba.patch fails to apply ("does not apply cleanly").
+      # Re-check it out with LF like the Linux jobs see.
+      - name: Normalize line endings for the cppjieba submodule
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+          git submodule deinit -f third_party/cppjieba
+          git submodule update --init --force --recursive third_party/cppjieba
+
       - name: Setup MSVC Developer Command Prompt
         uses: ilammy/msvc-dev-cmd@v1
         with:

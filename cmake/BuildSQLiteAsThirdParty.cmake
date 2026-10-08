@@ -25,7 +25,16 @@ if(WIN32)
     # the fts extension needs is enabled). The include directory and the
     # link library come from the vcpkg toolchain automatically.
     find_package(unofficial-sqlite3 CONFIG REQUIRED)
-    add_library(neug_sqlite3 ALIAS unofficial-sqlite3::sqlite3)
+    # The config's target name changed across vcpkg releases
+    # (unofficial-sqlite3::sqlite3 on older ones, unofficial::SQLite3::SQLite3
+    # on newer ones); alias whichever one this vcpkg actually provides.
+    if(TARGET unofficial-sqlite3::sqlite3)
+        add_library(neug_sqlite3 ALIAS unofficial-sqlite3::sqlite3)
+    elseif(TARGET unofficial::SQLite3::SQLite3)
+        add_library(neug_sqlite3 ALIAS unofficial::SQLite3::SQLite3)
+    else()
+        message(FATAL_ERROR "vcpkg sqlite3 config found but no known CMake target in it")
+    endif()
     # Consumers pass neug_sqlite3_amalgamation to add_dependencies();
     # keep the name available as a no-op target on Windows.
     add_library(neug_sqlite3_amalgamation INTERFACE)
