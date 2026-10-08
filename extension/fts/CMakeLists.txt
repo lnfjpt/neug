@@ -17,14 +17,17 @@ if(NOT EXISTS "${CMAKE_SOURCE_DIR}/third_party/cppjieba/include/cppjieba/Jieba.h
 endif()
 
 set(NEUG_CPPJIEBA_PATCH "${CMAKE_SOURCE_DIR}/third_party/cppjieba.patch")
+# --ignore-whitespace keeps the patch applicable on Windows, where a
+# core.autocrlf checkout rewrites either the .patch file or the submodule
+# sources to CRLF; it is a no-op on LF-only checkouts (Linux/macOS).
 execute_process(
-    COMMAND git apply --check "${NEUG_CPPJIEBA_PATCH}"
+    COMMAND git apply --ignore-whitespace --check "${NEUG_CPPJIEBA_PATCH}"
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/third_party/cppjieba"
     RESULT_VARIABLE NEUG_CPPJIEBA_PATCH_CHECK
     OUTPUT_QUIET ERROR_QUIET)
 if(NEUG_CPPJIEBA_PATCH_CHECK EQUAL 0)
     execute_process(
-        COMMAND git apply "${NEUG_CPPJIEBA_PATCH}"
+        COMMAND git apply --ignore-whitespace "${NEUG_CPPJIEBA_PATCH}"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/third_party/cppjieba"
         RESULT_VARIABLE NEUG_CPPJIEBA_PATCH_RESULT)
     if(NOT NEUG_CPPJIEBA_PATCH_RESULT EQUAL 0)
@@ -32,7 +35,7 @@ if(NEUG_CPPJIEBA_PATCH_CHECK EQUAL 0)
     endif()
 else()
     execute_process(
-        COMMAND git apply --reverse --check "${NEUG_CPPJIEBA_PATCH}"
+        COMMAND git apply --reverse --ignore-whitespace --check "${NEUG_CPPJIEBA_PATCH}"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/third_party/cppjieba"
         RESULT_VARIABLE NEUG_CPPJIEBA_PATCH_APPLIED
         OUTPUT_QUIET ERROR_QUIET)
