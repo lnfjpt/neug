@@ -119,7 +119,11 @@ if(WIN32)
     message(STATUS "Windows detected: disabling non-core features for core library build")
     # BUILD_PYTHON is no longer forced off; pass -DBUILD_PYTHON=ON to enable.
     set(BUILD_HTTP_SERVER OFF CACHE BOOL "HTTP server (brpc) is not supported on Windows yet" FORCE)
-    set(BUILD_EXTENSIONS "" CACHE STRING "Extensions are not supported on Windows yet" FORCE)
+    # Extensions build on Windows behind an explicit opt-in: pass
+    # -DBUILD_EXTENSIONS="name1;name2" (start with test_out_of_tree,
+    # pattern_matching, gds which have no external third-party deps).
+    # Their dependencies (OpenSSL, Arrow, curl, ...) must be provided via
+    # vcpkg or the system; the default remains empty (no extensions).
     set(BUILD_EXECUTABLES OFF CACHE BOOL "Executables are disabled on Windows core build" FORCE)
     set(BUILD_EXAMPLES OFF CACHE BOOL "Examples are disabled on Windows core build" FORCE)
     set(NEUG_NATIVE_ARCH OFF CACHE BOOL "Native architecture tuning is not supported on Windows" FORCE)
