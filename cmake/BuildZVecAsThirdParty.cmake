@@ -27,11 +27,14 @@ function(_neug_apply_patch source_dir patch_file patch_name)
         file(REAL_PATH "${_git_root}" _git_real_path)
     endif()
 
+    # --ignore-whitespace keeps the patches applicable on Windows, where a
+    # core.autocrlf checkout rewrites either the .patch file or the ZVec
+    # sources to CRLF; it is a no-op on LF-only checkouts (Linux/macOS).
     if(_git_check EQUAL 0 AND _git_real_path STREQUAL _source_real_path)
-        set(_patch_check_command git apply --check "${patch_file}")
-        set(_patch_apply_command git apply "${patch_file}")
+        set(_patch_check_command git apply --ignore-whitespace --check "${patch_file}")
+        set(_patch_apply_command git apply --ignore-whitespace "${patch_file}")
         set(_patch_reverse_check_command
-            git apply --reverse --check "${patch_file}")
+            git apply --reverse --ignore-whitespace --check "${patch_file}")
     else()
         find_program(_patch_executable patch REQUIRED)
         set(_patch_check_command
