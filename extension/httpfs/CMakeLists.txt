@@ -64,12 +64,14 @@ if(CURL_STATIC_LIB)
 
     # A static libcurl pulls in zlib/pthread/dl symbols itself.
     # Link them after libcurl.a so the linker can resolve those references.
+    # pthread/dl are POSIX-only; MSVC resolves these inside the CRT.
     find_package(ZLIB REQUIRED)
     set(CURL_LIBRARIES
         ${CURL_STATIC_LIB}
-        ZLIB::ZLIB
-        pthread
-        dl)
+        ZLIB::ZLIB)
+    if(NOT WIN32)
+        list(APPEND CURL_LIBRARIES pthread dl)
+    endif()
     # On macOS, a static libcurl references network proxy APIs such as
     # SCDynamicStoreCopyProxies from SystemConfiguration.framework.
     if(APPLE)
@@ -115,7 +117,9 @@ target_link_libraries(neug_httpfs_extension PRIVATE
     neug
 )
 
-if(BUILD_TEST)
+# The C++ test suite is not built on Windows (consistent with the Windows CI
+# test policy; the tests use POSIX socket headers).
+if(BUILD_TEST AND NOT WIN32)
     add_extension_test(NAME httpfs
         TEST_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/tests/s3_test.cc
                   ${CMAKE_CURRENT_SOURCE_DIR}/tests/http_test.cc
