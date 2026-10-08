@@ -14,70 +14,10 @@
 
 include_guard(GLOBAL)
 
-function(_neug_apply_patch source_dir patch_file patch_name)
-    execute_process(
-        COMMAND git rev-parse --show-toplevel
-        WORKING_DIRECTORY "${source_dir}"
-        RESULT_VARIABLE _git_check
-        OUTPUT_VARIABLE _git_root
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        ERROR_QUIET)
-    file(REAL_PATH "${source_dir}" _source_real_path)
-    if(_git_check EQUAL 0)
-        file(REAL_PATH "${_git_root}" _git_real_path)
-    endif()
-
-    # --ignore-whitespace keeps the patches applicable on Windows, where a
-    # core.autocrlf checkout rewrites either the .patch file or the ZVec
-    # sources to CRLF; it is a no-op on LF-only checkouts (Linux/macOS).
-    if(_git_check EQUAL 0 AND _git_real_path STREQUAL _source_real_path)
-        set(_patch_check_command git apply --ignore-whitespace --check "${patch_file}")
-        set(_patch_apply_command git apply --ignore-whitespace "${patch_file}")
-        set(_patch_reverse_check_command
-            git apply --reverse --ignore-whitespace --check "${patch_file}")
-    else()
-        find_program(_patch_executable patch REQUIRED)
-        set(_patch_check_command
-            "${_patch_executable}" -p1 -f --dry-run -i "${patch_file}")
-        set(_patch_apply_command
-            "${_patch_executable}" -p1 -f -i "${patch_file}")
-        set(_patch_reverse_check_command
-            "${_patch_executable}" -p1 -f -R --dry-run -i "${patch_file}")
-    endif()
-
-    execute_process(
-        COMMAND ${_patch_check_command}
-        WORKING_DIRECTORY "${source_dir}"
-        RESULT_VARIABLE _patch_check
-        ERROR_VARIABLE _patch_error)
-    if(_patch_check EQUAL 0)
-        execute_process(
-            COMMAND ${_patch_apply_command}
-            WORKING_DIRECTORY "${source_dir}"
-            RESULT_VARIABLE _patch_result
-            ERROR_VARIABLE _patch_error)
-        if(NOT _patch_result EQUAL 0)
-            message(FATAL_ERROR
-                "Failed to apply ${patch_name}: ${_patch_error}")
-        endif()
-        message(STATUS "Applied ${patch_name}.")
-        return()
-    endif()
-
-    execute_process(
-        COMMAND ${_patch_reverse_check_command}
-        WORKING_DIRECTORY "${source_dir}"
-        RESULT_VARIABLE _patch_applied
-        ERROR_VARIABLE _patch_reverse_error)
-    if(_patch_applied EQUAL 0)
-        message(STATUS "${patch_name} is already applied.")
-    else()
-        message(FATAL_ERROR
-            "${patch_name} neither applies nor appears already applied. "
-            "Apply error: ${_patch_error} "
-            "Reverse-check error: ${_patch_reverse_error}")
-    endif()
-endfunction()
+# _neug_apply_patch lives in the shared patch helper; it applies an
+# LF-normalized copy of each patch so core.autocrlf (CRLF) checkouts on
+# Windows cannot break git apply's patch parser.
+include(${CMAKE_CURRENT_LIST_DIR}/NeugPatchUtils.cmake)
 
 function(_neug_apply_zvec_patch source_dir patch_file patch_name marker_name)
     if(NOT EXISTS "${source_dir}")
