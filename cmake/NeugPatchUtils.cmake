@@ -10,20 +10,26 @@ include_guard(GLOBAL)
 # patch(1) executable elsewhere. Fails with the captured tool output so
 # CI logs are self-diagnosing.
 function(_neug_apply_patch source_dir patch_file patch_name)
-    # A core.autocrlf checkout on Windows rewrites the .patch files (files
-    # in the main repo) to CRLF, and git apply rejects them outright with
-    # "corrupt patch at line N": the failure happens while parsing the
-    # patch itself, so --ignore-whitespace cannot help. Materialize an
-    # LF-normalized copy in the build directory and apply that; on LF-only
-    # checkouts the copy is byte-identical to the original.
-    file(READ "${patch_file}" _neug_patch_content)
-    string(REPLACE "\r\n" "\n" _neug_patch_content "${_neug_patch_content}")
-    string(REGEX REPLACE "[^A-Za-z0-9._-]" "_" _neug_patch_stem "${patch_name}")
-    set(_normalized_patch
-        "${CMAKE_BINARY_DIR}/patch-normalized/${_neug_patch_stem}.patch")
-    file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/patch-normalized")
-    file(WRITE "${_normalized_patch}" "${_neug_patch_content}")
-    set(patch_file "${_normalized_patch}")
+    # git apply cannot parse a patch with CRLF line endings (an empty
+    # context line becomes "\r", which neither ends the hunk nor counts as
+    # context -> "corrupt patch at line N"). The .patch files live in the
+    # main repo, so a core.autocrlf checkout on Windows leaves them CRLF.
+    # CMake's own file I/O cannot fix this portably: file(READ) silently
+    # strips CR, and file(WRITE) on Windows writes LF back as CRLF.
+    # Detect CRLF byte-wise via a HEX read (which bypasses CMake's text
+    # normalization) and fail with the normalization recipe instead.
+    file(READ "${patch_file}" _neug_patch_hex HEX)
+    string(FIND "${_neug_patch_hex}" "0d0a" _neug_patch_crlf)
+    if(NOT _neug_patch_crlf EQUAL -1)
+        message(FATAL_ERROR
+            "${patch_name} has CRLF line endings, which git apply cannot "
+            "parse (corrupt patch). A core.autocrlf checkout rewrites "
+            "*.patch files to CRLF. Normalize them with:\n"
+            "  git config --global core.autocrlf false\n"
+            "  git config --global core.eol lf\n"
+            "  git checkout HEAD -- .\n"
+            "  git submodule update --init --force --recursive")
+    endif()
 
     execute_process(
         COMMAND git rev-parse --show-toplevel

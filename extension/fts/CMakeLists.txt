@@ -16,11 +16,10 @@ if(NOT EXISTS "${CMAKE_SOURCE_DIR}/third_party/cppjieba/include/cppjieba/Jieba.h
         "--recursive third_party/cppjieba")
 endif()
 
-# The shared helper applies an LF-normalized copy of the patch: a
-# core.autocrlf checkout on Windows rewrites cppjieba.patch (a file in the
-# main repo) to CRLF, and git apply rejects CRLF patches with "corrupt
-# patch" before --ignore-whitespace ever comes into play. On failure it
-# reports the captured git output instead of hiding it.
+# The shared helper verifies the patch has LF line endings before
+# applying it (git apply cannot parse CRLF patches, and CMake's file I/O
+# cannot normalize them portably on Windows) and reports the captured git
+# output on failure instead of hiding it.
 include(${CMAKE_SOURCE_DIR}/cmake/NeugPatchUtils.cmake)
 _neug_apply_patch(
     "${CMAKE_SOURCE_DIR}/third_party/cppjieba"

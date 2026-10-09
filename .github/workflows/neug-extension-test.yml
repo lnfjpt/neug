@@ -370,16 +370,21 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      # GitHub-hosted Windows runners default to core.autocrlf=true, so the
-      # cppjieba submodule is checked out with CRLF line endings and the
-      # LF-only cppjieba.patch fails to apply ("does not apply cleanly").
-      # Re-check it out with LF like the Linux jobs see.
-      - name: Normalize line endings for the cppjieba submodule
+      # GitHub-hosted Windows runners default to core.autocrlf=true, so
+      # tracked text files -- including the *.patch files in the main repo
+      # and inside submodules -- are checked out with CRLF, and git apply
+      # cannot parse a CRLF patch ("corrupt patch at line N"). Fixing this
+      # in CMake is not portable (file(READ) strips CR, file(WRITE) on
+      # Windows writes LF back as CRLF), so let git itself rewrite the
+      # working tree: with autocrlf off, a forced checkout emits the blob
+      # bytes unchanged (LF). Covers the main repo's *.patch files and
+      # every submodule (including the antlr4.patch inside ZVec).
+      - name: Normalize line endings (main repo + all submodules)
         run: |
           git config --global core.autocrlf false
           git config --global core.eol lf
-          git submodule deinit -f third_party/cppjieba
-          git submodule update --init --force --recursive third_party/cppjieba
+          git checkout HEAD -- .
+          git submodule update --init --force --recursive
 
       - name: Setup MSVC Developer Command Prompt
         uses: ilammy/msvc-dev-cmd@v1
