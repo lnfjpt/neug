@@ -456,9 +456,10 @@ jobs:
             $fixtureDir
           "NEUG_EXTENSION_CONFIGS=$(Join-Path $fixtureDir 'extension_config.cmake')" >> $env:GITHUB_ENV
 
-      # Everything except parquet (Arrow has no Windows port yet).
-      # vector_search is the riskiest piece under MSVC (ZVec sources); it
-      # stays in the list on purpose so CI surfaces breakage early.
+      # Everything except parquet (Arrow has no Windows port yet) and
+      # vector_search (the ZVec dependency needs a source-level MSVC port:
+      # 47+ files with pthread/mmap/__attribute__ usage; tracked as a
+      # separate effort, not a CMake-level fix).
       - name: Configure CMake
         run: |
           $pythonExe = (Get-Command python).Path
@@ -469,7 +470,7 @@ jobs:
             -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} `
             -DBUILD_PYTHON=ON `
             -DBUILD_TEST=OFF `
-            -DBUILD_EXTENSIONS="fts;gds;httpfs;pattern_matching;test_out_of_tree;vector_search" `
+            -DBUILD_EXTENSIONS="fts;gds;httpfs;pattern_matching;test_out_of_tree" `
             -DNEUG_EXTENSION_CONFIGS="${{ env.NEUG_EXTENSION_CONFIGS }}" `
             -DPython_EXECUTABLE="$pythonExe" `
             -DPYTHON_EXECUTABLE="$pythonExe" `
@@ -484,7 +485,7 @@ jobs:
 
       - name: Verify extension artifacts
         run: |
-          $expected = @("fts", "gds", "httpfs", "pattern_matching", "test_out_of_tree", "vector_search")
+          $expected = @("fts", "gds", "httpfs", "pattern_matching", "test_out_of_tree")
           $missing = @()
           foreach ($ext in $expected) {
             $artifact = Join-Path "build/extension/$ext" "lib$ext.neug_extension"

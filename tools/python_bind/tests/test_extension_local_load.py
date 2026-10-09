@@ -29,7 +29,13 @@ against the locally produced artifacts.
 
 parquet is intentionally absent from the list: the Arrow dependency has no
 Windows port yet (see the explicit skip test below).
+
+vector_search is also skipped on Windows: the ZVec dependency needs a
+source-level MSVC port (pthread/mmap/attribute usage across 47+ files),
+which is tracked separately from the CMake-level extension enablement.
 """
+
+import sys
 
 import pytest
 
@@ -38,7 +44,6 @@ from neug import Database
 EXTENSIONS = [
     "httpfs",
     "pattern_matching",
-    "vector_search",
     "fts",
     "gds",
 ]
@@ -92,4 +97,13 @@ def test_load_local_extension(ext_name: str, tmp_path):
     "remove this test once the extension is built on Windows"
 )
 def test_parquet_skipped_on_windows():
+    """Documents the intentional gap in the Windows extension matrix."""
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="vector_search needs a source-level MSVC port of ZVec "
+    "(pthread/mmap/attribute usage); it stays testable on macOS/Linux",
+)
+def test_vector_search_skipped_on_windows():
     """Documents the intentional gap in the Windows extension matrix."""
