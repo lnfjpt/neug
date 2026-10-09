@@ -729,7 +729,11 @@ endif()
 
 if(NEUG_NEED_ARROW)
 # -Wno-nonnull is required by Arrow headers; only needed when Arrow is built.
+# GCC/Clang only: MSVC has no such warning and rejects the flag outright
+# with D8021 (invalid numeric argument).
+if(NOT MSVC)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-nonnull ")
+endif()
 # Use system RapidJSON instead of building it (project already has rapidjson in third_party)
 set(RapidJSON_SOURCE "SYSTEM" CACHE STRING "" FORCE)
 # Point Arrow to use the project's RapidJSON

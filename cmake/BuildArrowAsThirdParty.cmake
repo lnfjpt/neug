@@ -59,8 +59,12 @@ function(build_arrow_as_third_party)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-error=uninitialized")
     endif()
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-    # Thrift (Arrow-parquet dependency) emits these warnings
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-error=unused-function")
+    # Thrift (Arrow-parquet dependency) emits these warnings. GCC/Clang
+    # only: every other flag above goes through a COMPILER_SUPPORTS_*
+    # probe, this one does not, and MSVC rejects -W flags with D8021.
+    if(NOT MSVC)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-error=unused-function")
+    endif()
     if (COMPILER_SUPPORTS_STRINGOP_TRUNCATION_FLAG)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-error=stringop-truncation")
     endif()
