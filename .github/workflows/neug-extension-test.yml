@@ -371,20 +371,27 @@ jobs:
           fetch-depth: 0
 
       # GitHub-hosted Windows runners default to core.autocrlf=true, so
-      # tracked text files -- including the *.patch files in the main repo
-      # and inside submodules -- are checked out with CRLF, and git apply
-      # cannot parse a CRLF patch ("corrupt patch at line N"). Fixing this
-      # in CMake is not portable (file(READ) strips CR, file(WRITE) on
-      # Windows writes LF back as CRLF), so let git itself rewrite the
-      # working tree: with autocrlf off, a forced checkout emits the blob
-      # bytes unchanged (LF). Covers the main repo's *.patch files and
-      # every submodule (including the antlr4.patch inside ZVec).
-      - name: Normalize line endings (main repo + all submodules)
+      # tracked text files -- including the *.patch files -- are checked out
+      # with CRLF, and git apply cannot parse a CRLF patch ("corrupt patch
+      # at line N"). Neither CMake file I/O (file(READ) strips CR,
+      # file(WRITE) re-adds it on Windows) nor git checkout are reliable
+      # normalizers here, so rewrite the bytes directly with tr: LF-only
+      # files pass through unchanged, CRLF files become LF byte-exactly.
+      # Then re-checkout the submodules that host patched sources with
+      # autocrlf off, so the patch target files are LF as well.
+      - name: Normalize patch and submodule files to LF (byte-exact)
+        shell: bash
         run: |
           git config --global core.autocrlf false
           git config --global core.eol lf
-          git checkout HEAD -- .
-          git submodule update --init --force --recursive
+          for f in third_party/*.patch third_party/zvec/thirdparty/antlr/antlr4.patch; do
+            [ -f "$f" ] || continue
+            tr -d '\r' < "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+            cr_left=$(tr -dc '\r' < "$f" | wc -c)
+            echo "${f}: CR bytes after normalize = ${cr_left}"
+          done
+          git submodule deinit -f third_party/cppjieba third_party/zvec
+          git submodule update --init --force --recursive third_party/cppjieba third_party/zvec
 
       - name: Setup MSVC Developer Command Prompt
         uses: ilammy/msvc-dev-cmd@v1
