@@ -35,8 +35,8 @@
 #if defined(__APPLE__)
 #include <mach-o/dyld.h>
 #elif defined(_WIN32)
-#include <windows.h>
 #include <process.h>
+#include <windows.h>
 #endif
 
 namespace neug {

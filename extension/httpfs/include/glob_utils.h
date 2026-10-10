@@ -44,76 +44,76 @@ namespace s3 {
 inline bool Fnmatch(const char* pattern, const char* text) {
   while (*pattern != '\0') {
     switch (*pattern) {
-      case '*': {
-        // Collapse consecutive '*' and try every suffix of text.
-        while (*pattern == '*') {
-          ++pattern;
-        }
-        if (*pattern == '\0') {
+    case '*': {
+      // Collapse consecutive '*' and try every suffix of text.
+      while (*pattern == '*') {
+        ++pattern;
+      }
+      if (*pattern == '\0') {
+        return true;
+      }
+      for (const char* t = text;; ++t) {
+        if (Fnmatch(pattern, t)) {
           return true;
         }
-        for (const char* t = text;; ++t) {
-          if (Fnmatch(pattern, t)) {
-            return true;
-          }
-          if (*t == '\0') {
-            return false;
-          }
+        if (*t == '\0') {
+          return false;
         }
       }
-      case '?': {
-        if (*text == '\0') {
-          return false;
-        }
-        ++pattern;
-        ++text;
-        break;
+    }
+    case '?': {
+      if (*text == '\0') {
+        return false;
       }
-      case '[': {
-        if (*text == '\0') {
-          return false;
-        }
-        const char* start = pattern + 1;
-        bool negated = (*start == '!');
-        if (negated) {
-          ++start;
-        }
-        bool matched = false;
-        bool first = true;
-        const char* p = start;
-        while (*p != '\0' && (*p != ']' || first)) {
-          char lo = *p;
-          char hi = lo;
-          if (p[1] == '-' && p[2] != ']' && p[2] != '\0') {
-            hi = p[2];
-            p += 3;
-          } else {
-            ++p;
-          }
-          if (*text >= lo && *text <= hi) {
-            matched = true;
-          }
-          first = false;
-        }
-        if (*p == '\0') {
-          // Unterminated '[' matches nothing (see doc comment above).
-          return false;
-        }
-        if (matched == negated) {
-          return false;
-        }
-        pattern = p + 1;  // past the ']'
-        ++text;
-        break;
+      ++pattern;
+      ++text;
+      break;
+    }
+    case '[': {
+      if (*text == '\0') {
+        return false;
       }
-      default: {
-        if (*text != *pattern) {
-          return false;
-        }
-        ++pattern;
-        ++text;
-        break;
+      const char* start = pattern + 1;
+      bool negated = (*start == '!');
+      if (negated) {
+        ++start;
       }
+      bool matched = false;
+      bool first = true;
+      const char* p = start;
+      while (*p != '\0' && (*p != ']' || first)) {
+        char lo = *p;
+        char hi = lo;
+        if (p[1] == '-' && p[2] != ']' && p[2] != '\0') {
+          hi = p[2];
+          p += 3;
+        } else {
+          ++p;
+        }
+        if (*text >= lo && *text <= hi) {
+          matched = true;
+        }
+        first = false;
+      }
+      if (*p == '\0') {
+        // Unterminated '[' matches nothing (see doc comment above).
+        return false;
+      }
+      if (matched == negated) {
+        return false;
+      }
+      pattern = p + 1;  // past the ']'
+      ++text;
+      break;
+    }
+    default: {
+      if (*text != *pattern) {
+        return false;
+      }
+      ++pattern;
+      ++text;
+      break;
+    }
     }
   }
   return *text == '\0';
