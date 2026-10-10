@@ -24,6 +24,7 @@
 #include <rapidjson/document.h>
 #include <charconv>
 #include <string_view>
+#include "neug/utils/api.h"
 #include "neug/common/numeric_cast.h"
 #include "neug/common/types.h"
 #include "neug/common/types/graph_types.h"
@@ -41,7 +42,7 @@ using vertex_t = VertexRecord;
 using edge_t = EdgeRecord;
 
 struct ExtraValueInfo;
-class Value {
+class NEUG_API Value {
   friend struct StringValue;
   friend struct StructValue;
   friend struct ListValue;
