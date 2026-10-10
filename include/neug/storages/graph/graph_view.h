@@ -19,6 +19,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include "neug/utils/api.h"
 
 #include "neug/storages/allocators.h"
 #include "neug/storages/csr/csr_view.h"
@@ -109,7 +110,7 @@ class EdgeTableView {
   TableView view_;
 };
 
-class GraphView {
+class NEUG_API GraphView {
  public:
   explicit GraphView(PropertyGraph& storage);
 

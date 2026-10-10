@@ -146,7 +146,12 @@ if(WIN32)
     # neug SHARED target, not just the final link step. Without this, NEUG_API
     # resolves to __declspec(dllimport) in object files, causing C2491 when
     # defining static data members.
-    add_compile_definitions(NEUG_EXPORTS)
+    #
+    # NOTE: do NOT use add_compile_definitions(NEUG_EXPORTS) here. A directory
+    # definition would leak into every target added afterwards (extensions,
+    # python bindings, tests), flipping their NEUG_API to the export side too.
+    # Consumers must keep NEUG_API = dllimport; the per-target definitions for
+    # the producer object libraries live in src/CMakeLists.txt.
     # Force-include platform.h so that GCC extensions such as __attribute__ are
     # neutralized for MSVC without touching every source file. Restrict to CXX
     # so the resource compiler (RC) does not see the option.

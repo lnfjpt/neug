@@ -67,7 +67,7 @@ class ClientContext;
  * @brief Database class is the main class of Kuzu. It manages all database
  * components.
  */
-class MetadataManager {
+class NEUG_API MetadataManager {
   friend class EmbeddedShell;
   friend class ClientContext;
   friend class Connection;
