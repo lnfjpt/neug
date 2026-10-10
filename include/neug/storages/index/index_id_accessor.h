@@ -22,6 +22,7 @@
 #include <unordered_map>
 
 #include "neug/config.h"
+#include "neug/utils/api.h"
 #include "neug/storages/container/i_container.h"
 #include "neug/storages/module/module.h"
 #include "neug/utils/property/types.h"
@@ -54,7 +55,7 @@ class IndexIDAccessor : public Module {
   void Detach(Checkpoint& ckp, MemoryLevel level) override = 0;
 };
 
-class DefaultIndexIDAccessor final : public IndexIDAccessor {
+class NEUG_API DefaultIndexIDAccessor final : public IndexIDAccessor {
  public:
   static constexpr size_t kDefaultCapacity = 1024;
 

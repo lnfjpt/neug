@@ -21,6 +21,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "neug/utils/api.h"
 #include "neug/storages/graph/schema.h"
 #include "neug/storages/module_descriptor.h"
 
@@ -35,7 +36,7 @@ class Checkpoint;
  * checkpoint. On disk every descriptor references immutable object IDs; the
  * Checkpoint root resolves them to local paths after loading.
  */
-class CheckpointManifest {
+class NEUG_API CheckpointManifest {
  public:
   /// Current on-disk format version for the manifest JSON.
   ///
