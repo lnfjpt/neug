@@ -82,11 +82,11 @@ class NEUG_API MetadataManager {
   /**
    * @brief Destructs the database object.
    */
-  NEUG_API virtual ~MetadataManager();
+  virtual ~MetadataManager();
 
-  NEUG_API catalog::Catalog* getCatalog() { return catalog.get(); }
+  catalog::Catalog* getCatalog() { return catalog.get(); }
 
-  NEUG_API neug::fsys::FileSystemRegistry* getVFS() const { return vfs.get(); }
+  neug::fsys::FileSystemRegistry* getVFS() const { return vfs.get(); }
 
   std::unique_ptr<MetadataManager> clone(const Schema* schema,
                                          const GraphStats& stats) const;
