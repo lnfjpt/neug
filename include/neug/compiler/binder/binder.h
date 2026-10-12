@@ -98,7 +98,7 @@ struct BoundTableScanInfo;
 // BinderScope keeps track of expressions in scope and their aliases. We
 // maintain the order of expressions in
 
-class Binder {
+class NEUG_API Binder {
   friend class ExpressionBinder;
 
  public:

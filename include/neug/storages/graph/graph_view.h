@@ -55,7 +55,7 @@ class TableView {
   std::vector<ColumnBase*> columns_;
 };
 
-class VertexTableView {
+class NEUG_API VertexTableView {
  public:
   VertexTableView() = default;
   explicit VertexTableView(VertexTable& table);
