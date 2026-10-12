@@ -78,6 +78,8 @@ class NEUG_API MetadataManager {
   friend struct extension::ExtensionUtils;
 
  public:
+  MetadataManager(const MetadataManager&) = delete;
+  MetadataManager& operator=(const MetadataManager&) = delete;
   MetadataManager();
   /**
    * @brief Destructs the database object.

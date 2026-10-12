@@ -63,6 +63,11 @@ class FactorizationGroup {
 
 class NEUG_API Schema {
  public:
+  Schema() = default;
+  Schema(const Schema&) = delete;
+  Schema& operator=(const Schema&) = delete;
+  Schema(Schema&&) = default;
+  Schema& operator=(Schema&&) = default;
   common::idx_t getNumGroups() const { return groups.size(); }
 
   FactorizationGroup* getGroup(

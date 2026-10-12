@@ -118,6 +118,8 @@ using IndexValues = std::vector<Value>;
  */
 class NEUG_API StorageIndex : public Module {
  public:
+  StorageIndex(const StorageIndex&) = delete;
+  StorageIndex& operator=(const StorageIndex&) = delete;
   StorageIndex() = default;
 
   /**

@@ -95,6 +95,7 @@ class NEUG_API LogicalScanNodeTable final : public LogicalOperator {
     this->cardinality = cardinality;
   }
   LogicalScanNodeTable(const LogicalScanNodeTable& other);
+  LogicalScanNodeTable& operator=(const LogicalScanNodeTable&) = delete;
 
   void computeFactorizedSchema() override;
   void computeFlatSchema() override;
