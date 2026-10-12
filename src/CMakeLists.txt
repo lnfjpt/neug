@@ -12,6 +12,19 @@ if(ENABLE_GCOV)
         CACHE STRING "Lcov exclude patterns")
 endif()
 
+# Every target under src/ feeds into the neug SHARED (or neug_static) library:
+# ~60 object/static libraries across the tree, including the whole compiler
+# subtree (src/compiler/**). All of them must see NEUG_EXPORTS so NEUG_API in
+# their sources expands to the export side; a producer TU compiled on the
+# import side fails with C2491 ("definition of dllimport static data member
+# not allowed", e.g. date_t.cpp) or silently drops exports. Enumerating the
+# targets one by one is unmaintainable, so define it once at directory scope
+# here. This is safe: the definition only propagates into subdirectories added
+# from this scope (all of src/). Extensions, python/node bindings and tests
+# are added from the root scope and never inherit it, so their NEUG_API stays
+# on the dllimport consumer side.
+add_compile_definitions(NEUG_EXPORTS)
+
 add_subdirectory(utils)
 add_subdirectory(storages)
 add_subdirectory(transaction)
@@ -30,30 +43,6 @@ add_library(neug SHARED ${ALL_OBJECT_FILES})
 # for symbols we want to export, while all other symbols remain hidden
 # due to CMAKE_CXX_VISIBILITY_PRESET=hidden.
 target_compile_definitions(neug PRIVATE NEUG_EXPORTS)
-# Every object library that feeds into the neug SHARED target must also see
-# NEUG_EXPORTS, so that NEUG_API in their sources (including protobuf-generated
-# code) expands to the export side. This must stay per-target: a directory-wide
-# add_compile_definitions would leak into extensions / python bindings / tests
-# and flip their NEUG_API to dllexport, breaking their imports from libneug.
-set(NEUG_PRODUCER_OBJECT_LIBS
-        neug_proto
-        neug_utils
-        neug_common
-        neug_transaction
-        neug_execution
-        neug_main
-        neug_storages_container
-        neug_storages_csr
-        neug_property_graph
-        neug_storages_index
-        neug_storages_loader
-        neug_storages_module
-        neug_execution_service)
-foreach(neug_obj_lib IN LISTS NEUG_PRODUCER_OBJECT_LIBS)
-    if(TARGET ${neug_obj_lib})
-        target_compile_definitions(${neug_obj_lib} PRIVATE NEUG_EXPORTS)
-    endif()
-endforeach()
 if (ENABLE_GCOV)
     target_link_options(neug PRIVATE --coverage)
 endif()

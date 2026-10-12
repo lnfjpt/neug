@@ -142,16 +142,16 @@ if(WIN32)
     # yaml-cpp is built as a static third-party library; tell its headers not to
     # use __declspec(dllimport) on MSVC.
     add_compile_definitions(YAML_CPP_STATIC_DEFINE)
-    # NEUG_EXPORTS must be visible to all object libraries that feed into the
-    # neug SHARED target, not just the final link step. Without this, NEUG_API
+    # NEUG_EXPORTS must be visible to all targets that feed into the neug
+    # SHARED target, not just the final link step. Without this, NEUG_API
     # resolves to __declspec(dllimport) in object files, causing C2491 when
     # defining static data members.
     #
     # NOTE: do NOT use add_compile_definitions(NEUG_EXPORTS) here. A directory
-    # definition would leak into every target added afterwards (extensions,
-    # python bindings, tests), flipping their NEUG_API to the export side too.
-    # Consumers must keep NEUG_API = dllimport; the per-target definitions for
-    # the producer object libraries live in src/CMakeLists.txt.
+    # definition at the root scope would leak into every target added
+    # afterwards (extensions, python bindings, tests), flipping their NEUG_API
+    # to the export side too. The definition lives at src/ directory scope in
+    # src/CMakeLists.txt, so only core-library producers see it.
     # Force-include platform.h so that GCC extensions such as __attribute__ are
     # neutralized for MSVC without touching every source file. Restrict to CXX
     # so the resource compiler (RC) does not see the option.
