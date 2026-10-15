@@ -27,8 +27,8 @@ INSTALL: the official extension repository does not publish Windows
 packages yet, so the Windows CI validates the build+load chain directly
 against the locally produced artifacts.
 
-parquet is intentionally absent from the list: the Arrow dependency has no
-Windows port yet (see the explicit skip test below).
+parquet loads via the Carquet C reader/writer on Windows too (vcpkg
+provides the zstd/lz4/zlib codecs it links against).
 
 vector_search is also skipped on Windows: the ZVec dependency needs a
 source-level MSVC port (pthread/mmap/attribute usage across 47+ files),
@@ -43,6 +43,7 @@ from neug import Database
 
 EXTENSIONS = [
     "httpfs",
+    "parquet",
     "pattern_matching",
     "fts",
     "gds",
@@ -90,14 +91,6 @@ def test_load_local_extension(ext_name: str, tmp_path):
             conn.close()
         if db is not None:
             db.close()
-
-
-@pytest.mark.skip(
-    reason="parquet does not support Windows yet (Arrow MSVC port pending); "
-    "remove this test once the extension is built on Windows"
-)
-def test_parquet_skipped_on_windows():
-    """Documents the intentional gap in the Windows extension matrix."""
 
 
 @pytest.mark.skipif(
