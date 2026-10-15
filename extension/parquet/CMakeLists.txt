@@ -39,34 +39,11 @@ function(build_carquet_as_third_party)
         "${_carquet_source}/src/writer/file_writer.c"
         "${_carquet_source}/src/writer/page_writer.c"
         "${_carquet_source}/src/writer/row_group_writer.c")
-    execute_process(
-        COMMAND git apply --check "${_carquet_patch}"
-        WORKING_DIRECTORY "${_carquet_source}"
-        RESULT_VARIABLE _patch_check
-        OUTPUT_QUIET
-        ERROR_VARIABLE _patch_check_error)
-    if(_patch_check EQUAL 0)
-        execute_process(
-            COMMAND git apply "${_carquet_patch}"
-            WORKING_DIRECTORY "${_carquet_source}"
-            RESULT_VARIABLE _patch_result)
-        if(NOT _patch_result EQUAL 0)
-            message(FATAL_ERROR "Failed to apply carquet.patch")
-        endif()
-    else()
-        execute_process(
-            COMMAND git apply --reverse --check "${_carquet_patch}"
-            WORKING_DIRECTORY "${_carquet_source}"
-            RESULT_VARIABLE _patch_applied
-            OUTPUT_QUIET
-            ERROR_VARIABLE _patch_applied_error)
-        if(NOT _patch_applied EQUAL 0)
-            message(FATAL_ERROR
-                "carquet.patch does not apply cleanly.\n"
-                "Forward check: ${_patch_check_error}\n"
-                "Reverse check: ${_patch_applied_error}")
-        endif()
-    endif()
+    # Shared helper: applies an LF-safe patch with --ignore-whitespace so a
+    # core.autocrlf submodule checkout on Windows (CRLF sources) cannot break
+    # git apply; a no-op for LF-only checkouts on Linux/macOS.
+    include(${CMAKE_SOURCE_DIR}/cmake/NeugPatchUtils.cmake)
+    _neug_apply_patch("${_carquet_source}" "${_carquet_patch}" "carquet.patch")
 
     if(NEUG_PACKAGE_BUILD)
         # Wheels and other distributable artifacts must not depend on codec

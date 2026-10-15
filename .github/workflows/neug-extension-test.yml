@@ -391,8 +391,8 @@ jobs:
             cr_left=$(tr -dc '\r' < "$f" | wc -c)
             echo "${f}: CR bytes after normalize = ${cr_left}"
           done
-          git submodule deinit -f third_party/cppjieba third_party/zvec
-          git submodule update --init --force --recursive third_party/cppjieba third_party/zvec
+          git submodule deinit -f third_party/cppjieba third_party/zvec third_party/carquet
+          git submodule update --init --force --recursive third_party/cppjieba third_party/zvec third_party/carquet
 
       - name: Setup MSVC Developer Command Prompt
         uses: ilammy/msvc-dev-cmd@v1
